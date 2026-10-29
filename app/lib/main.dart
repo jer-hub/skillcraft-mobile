@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'ui/debug/engine_debug_screen.dart';
+
 void main() {
   runApp(const ProviderScope(child: SkillCraftApp()));
 }
@@ -33,7 +35,20 @@ class HomeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('SkillCraft')),
+      appBar: AppBar(
+        title: const Text('SkillCraft'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.memory),
+            tooltip: 'Engine debug',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const EngineDebugScreen(),
+              ),
+            ),
+          ),
+        ],
+      ),
       body: const Center(child: Text('No model loaded')),
     );
   }
