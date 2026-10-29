@@ -1,0 +1,135 @@
+import 'dart:async';
+import 'dart:io';
+
+import 'package:path/path.dart' as p;
+
+import 'skill.dart';
+import 'skill_parser.dart';
+
+/// One `.md` file in the skills folder, valid or not.
+class SkillEntry {
+  const SkillEntry({
+    required this.path,
+    required this.source,
+    this.skill,
+    this.issues = const [],
+  });
+
+  final String path;
+  final String source;
+
+  /// Null when the file has issues.
+  final Skill? skill;
+  final List<SkillIssue> issues;
+
+  String get fileName => p.basename(path);
+  bool get isValid => skill != null && issues.isEmpty;
+}
+
+/// Reads and writes skill playbooks in a folder of `.md` files.
+class SkillRepository {
+  SkillRepository({required this.root, required this.loadSeedSkills});
+
+  /// Folder holding the `.md` skills.
+  final Directory root;
+
+  /// Bundled skills (file name -> contents) copied in on first run.
+  final Future<Map<String, String>> Function() loadSeedSkills;
+
+  static const _seededMarker = '.seeded';
+
+  /// Creates the folder and, the first time only, copies in the bundled
+  /// skills. Deleting a seeded skill later does not bring it back.
+  Future<void> ensureSeeded() async {
+    await root.create(recursive: true);
+    final marker = File(p.join(root.path, _seededMarker));
+    if (await marker.exists()) return;
+    for (final MapEntry(key: name, value: text)
+        in (await loadSeedSkills()).entries) {
+      final file = File(p.join(root.path, name));
+      if (!await file.exists()) await file.writeAsString(text);
+    }
+    await marker.writeAsString('');
+  }
+
+  /// Parses every `.md` file, sorted by file name.
+  Future<List<SkillEntry>> loadAll() async {
+    if (!await root.exists()) return const [];
+    final files = await root
+        .list()
+        .where((e) => e is File && e.path.toLowerCase().endsWith('.md'))
+        .cast<File>()
+        .toList();
+    files.sort((a, b) => p.basename(a.path).compareTo(p.basename(b.path)));
+
+    final entries = <SkillEntry>[];
+    final firstFileFor = <String, String>{};
+    for (final file in files) {
+      final entry = _parse(file.path, await file.readAsString());
+      final skill = entry.skill;
+      if (skill == null) {
+        entries.add(entry);
+        continue;
+      }
+      final other = firstFileFor[skill.name];
+      if (other != null) {
+        entries.add(SkillEntry(path: file.path, source: entry.source, issues: [
+          SkillIssue('Skill name "${skill.name}" is already used by $other',
+              line: 2),
+        ]));
+      } else {
+        firstFileFor[skill.name] = entry.fileName;
+        entries.add(entry);
+      }
+    }
+    return entries;
+  }
+
+  /// Emits the current entries, then again whenever the folder changes.
+  Stream<List<SkillEntry>> watch() async* {
+    yield await loadAll();
+    if (!await root.exists()) return;
+    // Editors write in several steps; collapse bursts into one reload.
+    final changes = StreamController<void>();
+    Timer? debounce;
+    final sub = root.watch().listen((_) {
+      debounce?.cancel();
+      debounce = Timer(const Duration(milliseconds: 300), () => changes.add(null));
+    });
+    try {
+      await for (final _ in changes.stream) {
+        yield await loadAll();
+      }
+    } finally {
+      debounce?.cancel();
+      await sub.cancel();
+      await changes.close();
+    }
+  }
+
+  /// Validates and writes [source] to [fileName]. The file is written even
+  /// when invalid, so work in progress is never lost; check the result.
+  Future<SkillEntry> save(String fileName, String source) async {
+    if (p.basename(fileName) != fileName || !fileName.endsWith('.md')) {
+      throw ArgumentError.value(fileName, 'fileName', 'must be a plain .md name');
+    }
+    await root.create(recursive: true);
+    final path = p.join(root.path, fileName);
+    await File(path).writeAsString(source);
+    return _parse(path, source);
+  }
+
+  Future<void> delete(String fileName) async {
+    final file = File(p.join(root.path, p.basename(fileName)));
+    if (await file.exists()) await file.delete();
+  }
+
+  static SkillEntry _parse(String path, String source) {
+    try {
+      return SkillEntry(
+          path: path, source: source, skill: parseSkill(source, path: path));
+    } on SkillFormatException catch (e) {
+      return SkillEntry(path: path, source: source, issues: e.issues);
+    }
+  }
+}

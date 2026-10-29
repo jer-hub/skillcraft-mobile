@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'ui/debug/engine_debug_screen.dart';
+import 'ui/debug/skill_debug_screen.dart';
 
 void main() {
   runApp(const ProviderScope(child: SkillCraftApp()));
@@ -38,6 +39,15 @@ class HomeScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text('SkillCraft'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.description_outlined),
+            tooltip: 'Skill debug',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const SkillDebugScreen(),
+              ),
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.memory),
             tooltip: 'Engine debug',
