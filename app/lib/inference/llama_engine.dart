@@ -21,6 +21,9 @@ abstract interface class InferenceEngine {
   /// run ends with one whose `isCancelled` is true.
   Stream<String> generate(String prompt, GenerationOptions options);
 
+  /// Prompt tokens the last completed [generate] reused from the KV cache.
+  int get lastReusedTokens;
+
   /// Stops the current generation, if any.
   void cancel();
 
@@ -41,6 +44,9 @@ class LlamaEngine implements InferenceEngine {
 
   @override
   bool get isLoaded => _handleAddress != null;
+
+  @override
+  int lastReusedTokens = 0;
 
   @override
   Future<void> load(String modelPath, EngineConfig config) async {
@@ -72,7 +78,8 @@ class LlamaEngine implements InferenceEngine {
   Stream<String> generate(String prompt, GenerationOptions options) {
     final controller = StreamController<String>();
     final id = _nextId++;
-    _pending[id] = _StreamRequest(controller);
+    _pending[id] = _StreamRequest(
+        controller, (reused) => lastReusedTokens = reused);
     final worker = _worker;
     if (worker == null || !isLoaded) {
       _pending.remove(id);
@@ -180,10 +187,11 @@ void _workerMain(SendPort replies) {
         case _GbnfCmd(:final schemaJson):
           replies.send(_Done(id, jsonSchemaToGbnf(schemaJson)));
         case _GenerateCmd(:final prompt, :final options):
-          for (final piece in _require(model).generate(prompt, options)) {
+          final m = _require(model);
+          for (final piece in m.generate(prompt, options)) {
             replies.send(_Token(id, piece));
           }
-          replies.send(_Done(id, null));
+          replies.send(_Done(id, m.lastReusedTokens));
       }
     } on LlamaException catch (e) {
       replies.send(_Failed(id, e.code, e.message));
@@ -269,11 +277,15 @@ final class _FutureRequest<T> extends _Request {
 }
 
 final class _StreamRequest extends _Request {
-  _StreamRequest(this.controller);
+  _StreamRequest(this.controller, this.onReused);
   final StreamController<String> controller;
+  final void Function(int reused) onReused;
 
   @override
-  void complete(Object? value) => controller.close();
+  void complete(Object? value) {
+    onReused(value as int);
+    controller.close();
+  }
 
   @override
   void fail(Object error, StackTrace stack) {

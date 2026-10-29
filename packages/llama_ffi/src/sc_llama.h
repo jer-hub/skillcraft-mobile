@@ -54,12 +54,17 @@ SC_API int32_t sc_tokenize_count(sc_handle* h, const char* text);
 // Context window size in tokens.
 SC_API int32_t sc_n_ctx(sc_handle* h);
 
-// Clears the KV cache, sets up sampling and evaluates `prompt`.
+// Sets up sampling and evaluates `prompt`. The KV cache is kept between calls:
+// the longest prefix shared with the previous prompt (plus its generated
+// tokens) is reused and only the remainder is evaluated.
 // `gbnf` may be NULL for unconstrained generation; its start rule is "root".
 // Returns SC_OK or a negative SC_ERR_*; details via sc_last_error().
 SC_API int32_t sc_begin(sc_handle* h, const char* prompt, const char* gbnf,
                         float temperature, float top_p, uint32_t seed,
                         int32_t max_tokens);
+
+// Prompt tokens the last sc_begin took from the KV cache instead of evaluating.
+SC_API int32_t sc_n_reused(sc_handle* h);
 
 // Samples the next token and writes its UTF-8 bytes (not null-terminated,
 // possibly a partial code point) into `buf`.

@@ -101,6 +101,9 @@ class LlamaModel {
 
   int get contextTokens => _bindings.sc_n_ctx(_checked);
 
+  /// Prompt tokens the last [generate] reused from the KV cache.
+  int get lastReusedTokens => _bindings.sc_n_reused(_checked);
+
   /// Number of tokens [text] encodes to (special tokens included).
   int tokenCount(String text) {
     final cText = text.toNativeUtf8();
@@ -114,6 +117,9 @@ class LlamaModel {
   }
 
   /// Evaluates [prompt] and yields generated text as it is produced.
+  ///
+  /// The KV cache persists between calls, so a prompt that extends the
+  /// previous one (prompt + output) only evaluates the new tokens.
   ///
   /// Throws [LlamaException] on errors, including cancellation.
   Iterable<String> generate(String prompt, GenerationOptions options) sync* {

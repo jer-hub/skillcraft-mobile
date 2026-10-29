@@ -124,7 +124,8 @@ class _EngineDebugScreenState extends ConsumerState<EngineDebugScreen> {
         final tps = pieces > 1 && genMs > 0
             ? ((pieces - 1) * 1000 / genMs).toStringAsFixed(1)
             : '-';
-        var line = 'prompt $promptTokens tok · first token '
+        var line = 'prompt $promptTokens tok '
+            '(${engine.lastReusedTokens} cached) · first token '
             '${firstTokenMs ?? '-'} ms · ~$tps tok/s · RSS ${_rssMb()} MB';
         if (_jsonMode) {
           line += ' · JSON ${_isJson(_output.toString()) ? 'valid' : 'INVALID'}';

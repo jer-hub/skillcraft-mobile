@@ -63,6 +63,11 @@ class ScLlamaBindings {
           int Function(ffi.Pointer<ScHandle>, ffi.Pointer<ffi.Char>,
               ffi.Pointer<ffi.Char>, double, double, int, int)>();
 
+  late final sc_n_reused =
+      _lookup<ffi.NativeFunction<ffi.Int32 Function(ffi.Pointer<ScHandle>)>>(
+    'sc_n_reused',
+  ).asFunction<int Function(ffi.Pointer<ScHandle>)>();
+
   late final sc_next = _lookup<
           ffi.NativeFunction<
               ffi.Int32 Function(ffi.Pointer<ScHandle>, ffi.Pointer<ffi.Char>,

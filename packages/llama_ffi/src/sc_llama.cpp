@@ -17,12 +17,13 @@ struct sc_handle {
   llama_context* ctx = nullptr;
   const llama_vocab* vocab = nullptr;
 
-  llama_sampler* chain = nullptr;    // temp -> top-p -> dist
+  llama_sampler* chain = nullptr;    // top-k -> top-p -> temp -> dist
   llama_sampler* grammar = nullptr;  // optional GBNF constraint
 
   std::vector<llama_token_data> candidates;  // reused for grammar resampling
   llama_token pending = LLAMA_TOKEN_NULL;    // sampled but not yet decoded
-  int32_t n_past = 0;
+  std::vector<llama_token> cached;           // tokens held in the KV cache
+  int32_t n_reused = 0;                      // prompt tokens served from cache
   int32_t n_generated = 0;
   int32_t max_tokens = 0;
 
@@ -31,6 +32,8 @@ struct sc_handle {
 };
 
 static thread_local std::string g_load_error;
+
+static constexpr int32_t kTopK = 40;
 
 static char* dup_string(const std::string& s) {
   char* out = static_cast<char*>(std::malloc(s.size() + 1));
@@ -55,23 +58,58 @@ static void free_samplers(sc_handle* h) {
   }
 }
 
-// Decodes `tokens` in n_batch-sized chunks, advancing n_past.
-static int32_t decode_tokens(sc_handle* h, llama_token* tokens, int32_t n) {
+static void clear_cache(sc_handle* h) {
+  llama_memory_clear(llama_get_memory(h->ctx), true);
+  h->cached.clear();
+}
+
+static int32_t n_past(const sc_handle* h) { return static_cast<int32_t>(h->cached.size()); }
+
+// Decodes `tokens` in n_batch-sized chunks, recording them in `cached`.
+// On failure the cache may hold a partial batch, so it is dropped entirely.
+static int32_t decode_tokens(sc_handle* h, const llama_token* tokens, int32_t n) {
   const int32_t n_batch = static_cast<int32_t>(llama_n_batch(h->ctx));
   for (int32_t i = 0; i < n; i += n_batch) {
     const int32_t chunk = (n - i) < n_batch ? (n - i) : n_batch;
-    const int32_t rc = llama_decode(h->ctx, llama_batch_get_one(tokens + i, chunk));
+    const int32_t rc = llama_decode(
+        h->ctx, llama_batch_get_one(const_cast<llama_token*>(tokens + i), chunk));
     if (rc == 2 || h->cancelled.load()) {
+      clear_cache(h);
       h->error = "cancelled";
       return SC_ERR_CANCELLED;
     }
     if (rc != 0) {
+      clear_cache(h);
       h->error = "llama_decode failed with code " + std::to_string(rc);
       return SC_ERR_DECODE;
     }
-    h->n_past += chunk;
+    h->cached.insert(h->cached.end(), tokens + i, tokens + i + chunk);
   }
   return SC_OK;
+}
+
+// Keeps the longest cached prefix shared with `tokens` and drops the rest,
+// so only the new suffix has to be evaluated. Prompt evaluation is the slow
+// part on this hardware (~11 tok/s), and agent steps re-send the previous
+// prompt plus a tool result, so most of it is usually already cached.
+static void reuse_prefix(sc_handle* h, const std::vector<llama_token>& tokens) {
+  size_t n_keep = 0;
+  while (n_keep < h->cached.size() && n_keep < tokens.size() &&
+         h->cached[n_keep] == tokens[n_keep]) {
+    n_keep++;
+  }
+  // The last prompt token must be evaluated again to get fresh logits.
+  if (n_keep == tokens.size() && n_keep > 0) {
+    n_keep--;
+  }
+  if (n_keep < h->cached.size()) {
+    if (llama_memory_seq_rm(llama_get_memory(h->ctx), 0, static_cast<llama_pos>(n_keep), -1)) {
+      h->cached.resize(n_keep);
+    } else {
+      clear_cache(h);
+    }
+  }
+  h->n_reused = n_past(h);
 }
 
 // Samples one token; with a grammar, uses rejection sampling like llama.cpp's
@@ -131,6 +169,8 @@ SC_API sc_handle* sc_load(const char* model_path, int32_t n_ctx, int32_t n_threa
   cparams.n_threads = n_threads;
   cparams.n_threads_batch = n_threads;
   cparams.no_perf = true;
+  // Measured on Snapdragon 680: ~5% faster prompt and generation than off.
+  cparams.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_ENABLED;
 
   auto* h = new sc_handle();
   cparams.abort_callback = abort_cb;
@@ -192,18 +232,20 @@ SC_API int32_t sc_begin(sc_handle* h, const char* prompt, const char* gbnf,
   h->cancelled.store(false);
   h->error.clear();
   h->pending = LLAMA_TOKEN_NULL;
-  h->n_past = 0;
+  h->n_reused = 0;
   h->n_generated = 0;
   h->max_tokens = max_tokens;
-  llama_memory_clear(llama_get_memory(h->ctx), true);
 
   free_samplers(h);
   h->chain = llama_sampler_chain_init(llama_sampler_chain_default_params());
   if (temperature <= 0.0f) {
     llama_sampler_chain_add(h->chain, llama_sampler_init_greedy());
   } else {
-    llama_sampler_chain_add(h->chain, llama_sampler_init_temp(temperature));
+    // top-k first (llama.cpp's default order): without it top-p sorts all
+    // ~152k Qwen tokens on every step, a measurable cost on Cortex-A73.
+    llama_sampler_chain_add(h->chain, llama_sampler_init_top_k(kTopK));
     llama_sampler_chain_add(h->chain, llama_sampler_init_top_p(top_p, 1));
+    llama_sampler_chain_add(h->chain, llama_sampler_init_temp(temperature));
     llama_sampler_chain_add(h->chain, llama_sampler_init_dist(seed));
   }
   if (gbnf != nullptr && gbnf[0] != '\0') {
@@ -230,8 +272,11 @@ SC_API int32_t sc_begin(sc_handle* h, const char* prompt, const char* gbnf,
                std::to_string(sc_n_ctx(h));
     return SC_ERR_CONTEXT_FULL;
   }
-  return decode_tokens(h, tokens.data(), n_needed);
+  reuse_prefix(h, tokens);
+  return decode_tokens(h, tokens.data() + n_past(h), n_needed - n_past(h));
 }
+
+SC_API int32_t sc_n_reused(sc_handle* h) { return h == nullptr ? 0 : h->n_reused; }
 
 SC_API int32_t sc_next(sc_handle* h, char* buf, int32_t buf_len) {
   if (h == nullptr || h->chain == nullptr || buf == nullptr || buf_len <= 0) {
@@ -244,7 +289,7 @@ SC_API int32_t sc_next(sc_handle* h, char* buf, int32_t buf_len) {
 
   // Feed back the token produced by the previous call.
   if (h->pending != LLAMA_TOKEN_NULL) {
-    if (h->n_past + 1 >= sc_n_ctx(h)) {
+    if (n_past(h) + 1 >= sc_n_ctx(h)) {
       h->error = "context window full";
       return SC_ERR_CONTEXT_FULL;
     }
