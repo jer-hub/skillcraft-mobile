@@ -63,6 +63,26 @@ class ScLlamaBindings {
           int Function(ffi.Pointer<ScHandle>, ffi.Pointer<ffi.Char>,
               ffi.Pointer<ffi.Char>, double, double, int, int)>();
 
+  late final sc_load_embedder = _lookup<
+          ffi.NativeFunction<
+              ffi.Pointer<ScHandle> Function(
+                  ffi.Pointer<ffi.Char>, ffi.Int32, ffi.Int32)>>('sc_load_embedder')
+      .asFunction<
+          ffi.Pointer<ScHandle> Function(ffi.Pointer<ffi.Char>, int, int)>();
+
+  late final sc_n_embd =
+      _lookup<ffi.NativeFunction<ffi.Int32 Function(ffi.Pointer<ScHandle>)>>(
+    'sc_n_embd',
+  ).asFunction<int Function(ffi.Pointer<ScHandle>)>();
+
+  late final sc_embed = _lookup<
+          ffi.NativeFunction<
+              ffi.Int32 Function(ffi.Pointer<ScHandle>, ffi.Pointer<ffi.Char>,
+                  ffi.Pointer<ffi.Float>, ffi.Int32)>>('sc_embed')
+      .asFunction<
+          int Function(ffi.Pointer<ScHandle>, ffi.Pointer<ffi.Char>,
+              ffi.Pointer<ffi.Float>, int)>();
+
   late final sc_n_reused =
       _lookup<ffi.NativeFunction<ffi.Int32 Function(ffi.Pointer<ScHandle>)>>(
     'sc_n_reused',

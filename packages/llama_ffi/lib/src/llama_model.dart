@@ -172,6 +172,61 @@ class LlamaModel {
       code, _bindings.sc_last_error(_handle).cast<Utf8>().toDartString());
 }
 
+/// A sentence-embedding model (e.g. nomic-embed-text). Blocking, like
+/// [LlamaModel]: use from a background isolate.
+class LlamaEmbedder {
+  LlamaEmbedder._(this._handle) : dimensions = _bindings.sc_n_embd(_handle);
+
+  final Pointer<ScHandle> _handle;
+
+  /// Length of every vector [embed] returns.
+  final int dimensions;
+  bool _disposed = false;
+
+  /// Throws [LlamaException] if the file is not a pooled embedding model.
+  factory LlamaEmbedder.load(String path, {int contextTokens = 512, int threads = 4}) {
+    if (!_backendReady) {
+      _bindings.sc_backend_init();
+      _backendReady = true;
+    }
+    final cPath = path.toNativeUtf8();
+    try {
+      final handle = _bindings.sc_load_embedder(cPath.cast(), contextTokens, threads);
+      if (handle == nullptr) {
+        throw LlamaException(
+            0, _bindings.sc_last_load_error().cast<Utf8>().toDartString());
+      }
+      return LlamaEmbedder._(handle);
+    } finally {
+      malloc.free(cPath);
+    }
+  }
+
+  /// L2-normalised embedding of [text] (truncated to the context length).
+  List<double> embed(String text) {
+    if (_disposed) throw StateError('LlamaEmbedder used after dispose');
+    final cText = text.toNativeUtf8();
+    final out = malloc<Float>(dimensions);
+    try {
+      final n = _bindings.sc_embed(_handle, cText.cast(), out, dimensions);
+      if (n < 0) {
+        throw LlamaException(
+            n, _bindings.sc_last_error(_handle).cast<Utf8>().toDartString());
+      }
+      return List<double>.of(out.asTypedList(n));
+    } finally {
+      malloc.free(cText);
+      malloc.free(out);
+    }
+  }
+
+  void dispose() {
+    if (_disposed) return;
+    _disposed = true;
+    _bindings.sc_free(_handle);
+  }
+}
+
 /// Converts a JSON Schema (as JSON text) into a GBNF grammar using llama.cpp's
 /// converter. Throws [FormatException] for schemas it cannot handle.
 String jsonSchemaToGbnf(String schemaJson) {

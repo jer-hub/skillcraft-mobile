@@ -1,8 +1,16 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 
+import '../core/config.dart';
+import '../inference/engine_providers.dart';
+import '../storage/database.dart';
 import '../storage/storage_providers.dart';
+import '../storage/vector_store.dart';
 import 'calendar_bridge.dart';
 import 'host_api.dart';
 import 'mcp_host.dart';
@@ -17,13 +25,44 @@ class ToolServers {
 
 final calendarBridgeProvider = Provider<CalendarBridge>((ref) => DeviceCalendarBridge());
 
-final toolServersProvider = FutureProvider<ToolServers>((ref) async {
+/// `<app external files>/models`, where imported GGUF files live.
+final modelsDirectoryProvider = FutureProvider<Directory>((ref) async {
+  final base =
+      await getExternalStorageDirectory() ?? await getApplicationDocumentsDirectory();
+  return Directory(p.join(base.path, AppPaths.modelsDir));
+});
+
+/// Notes search, or null when no embedding model is present or it fails to
+/// load (the notes server then stays off).
+final vectorStoreProvider = FutureProvider<VectorStore?>((ref) async {
   final db = await ref.watch(databaseProvider.future);
+  if (!db.hasVectorSupport) return null;
+  final dir = await ref.watch(modelsDirectoryProvider.future);
+  final file = File(p.join(dir.path, AppPaths.embeddingModelFile));
+  if (!file.existsSync()) return null;
+  final engine = ref.watch(embeddingEngineProvider);
+  try {
+    if (!engine.hasEmbedder) {
+      await engine.loadEmbedder(file.path, threads: ref.watch(engineConfigProvider).threads);
+    }
+    final store = VectorStore(db, engine);
+    await store.open();
+    return store;
+  } catch (e) {
+    debugPrint('Embedding model not loaded: $e');
+    return null;
+  }
+});
+
+final toolServersProvider = FutureProvider<ToolServers>((ref) async {
+  final AppDatabase db = await ref.watch(databaseProvider.future);
+  final vectors = await ref.watch(vectorStoreProvider.future);
   final (host, failures) = await startToolServers(
     loadAsset: rootBundle.loadString,
     capabilityFunctions: {
       Capability.sql: sqlFunctions(db),
       Capability.calendar: calendarFunctions(ref.watch(calendarBridgeProvider)),
+      if (vectors != null) Capability.vector: vectorFunctions(vectors),
     },
     commonFunctions: logFunctions((line) => debugPrint('[tool] $line')),
   );

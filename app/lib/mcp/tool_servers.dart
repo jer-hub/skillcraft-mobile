@@ -16,6 +16,8 @@ class ToolServerDef {
 const bundledToolServers = [
   ToolServerDef('local_db', 'assets/tools/local_db.js', {Capability.sql}),
   ToolServerDef('calendar', 'assets/tools/calendar.js', {Capability.calendar}),
+  // Started only when an embedding model is available.
+  ToolServerDef('notes', 'assets/tools/vector.js', {Capability.vector}),
 ];
 
 const preludeAsset = 'assets/tools/_prelude.js';

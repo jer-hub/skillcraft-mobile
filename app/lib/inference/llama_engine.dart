@@ -30,11 +30,27 @@ abstract interface class InferenceEngine {
   Future<void> dispose();
 }
 
+/// Sentence embeddings for vector search. [LlamaEngine] is the real one.
+abstract interface class EmbeddingEngine {
+  bool get hasEmbedder;
+
+  /// Vector width of the loaded embedding model (0 when none is loaded).
+  int get embeddingDimensions;
+
+  Future<void> loadEmbedder(String modelPath, {int threads = 4});
+  Future<void> unloadEmbedder();
+
+  /// L2-normalised embedding of [text].
+  Future<List<double>> embed(String text);
+}
+
 /// Runs llama.cpp on a long-lived background isolate.
 ///
 /// Requests are handled one at a time in order. Generation blocks the worker,
 /// so [cancel] signals the native handle directly from the calling isolate.
-class LlamaEngine implements InferenceEngine {
+/// The embedding model shares the worker; tool calls (which embed) only run
+/// between generations, so they never wait on each other in practice.
+class LlamaEngine implements InferenceEngine, EmbeddingEngine {
   SendPort? _worker;
   Isolate? _isolate;
   ReceivePort? _inbox;
@@ -44,6 +60,32 @@ class LlamaEngine implements InferenceEngine {
 
   @override
   bool get isLoaded => _handleAddress != null;
+
+  @override
+  int embeddingDimensions = 0;
+
+  @override
+  bool get hasEmbedder => embeddingDimensions > 0;
+
+  @override
+  Future<void> loadEmbedder(String modelPath, {int threads = 4}) async {
+    await _ensureWorker();
+    embeddingDimensions = 0;
+    embeddingDimensions = await _call<int>(_LoadEmbedderCmd(modelPath, threads));
+  }
+
+  @override
+  Future<void> unloadEmbedder() async {
+    if (_worker == null || !hasEmbedder) return;
+    await _call<void>(const _UnloadEmbedderCmd());
+    embeddingDimensions = 0;
+  }
+
+  @override
+  Future<List<double>> embed(String text) async {
+    if (!hasEmbedder) throw StateError('No embedding model loaded');
+    return (await _call<List<Object?>>(_EmbedCmd(text))).cast<double>();
+  }
 
   @override
   int lastReusedTokens = 0;
@@ -104,6 +146,7 @@ class LlamaEngine implements InferenceEngine {
     if (_worker != null) {
       try {
         await unload();
+        await unloadEmbedder();
       } finally {
         _isolate?.kill();
         _inbox?.close();
@@ -166,6 +209,7 @@ void _workerMain(SendPort replies) {
   final inbox = ReceivePort();
   replies.send(inbox.sendPort);
   LlamaModel? model;
+  LlamaEmbedder? embedder;
 
   inbox.listen((message) {
     final (int id, _Command cmd) = message as (int, _Command);
@@ -192,6 +236,19 @@ void _workerMain(SendPort replies) {
             replies.send(_Token(id, piece));
           }
           replies.send(_Done(id, m.lastReusedTokens));
+        case _LoadEmbedderCmd(:final path, :final threads):
+          embedder?.dispose();
+          embedder = null;
+          final loaded = LlamaEmbedder.load(path, threads: threads);
+          embedder = loaded;
+          replies.send(_Done(id, loaded.dimensions));
+        case _UnloadEmbedderCmd():
+          embedder?.dispose();
+          embedder = null;
+          replies.send(_Done(id, null));
+        case _EmbedCmd(:final text):
+          final e = embedder ?? (throw StateError('No embedding model loaded'));
+          replies.send(_Done(id, e.embed(text)));
       }
     } on LlamaException catch (e) {
       replies.send(_Failed(id, e.code, e.message));
@@ -236,6 +293,21 @@ final class _GenerateCmd extends _Command {
   const _GenerateCmd(this.prompt, this.options);
   final String prompt;
   final GenerationOptions options;
+}
+
+final class _LoadEmbedderCmd extends _Command {
+  const _LoadEmbedderCmd(this.path, this.threads);
+  final String path;
+  final int threads;
+}
+
+final class _UnloadEmbedderCmd extends _Command {
+  const _UnloadEmbedderCmd();
+}
+
+final class _EmbedCmd extends _Command {
+  const _EmbedCmd(this.text);
+  final String text;
 }
 
 sealed class _Reply {

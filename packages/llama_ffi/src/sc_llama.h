@@ -81,6 +81,18 @@ SC_API void sc_cancel(sc_handle* h);
 // Message describing the last error on this handle (never NULL).
 SC_API const char* sc_last_error(sc_handle* h);
 
+// Loads an embedding model (e.g. nomic-embed-text) with pooled sequence
+// embeddings. Texts longer than n_ctx tokens are truncated. NULL on failure,
+// reason via sc_last_load_error(). Free with sc_free.
+SC_API sc_handle* sc_load_embedder(const char* model_path, int32_t n_ctx, int32_t n_threads);
+
+// Embedding width of a handle from sc_load_embedder.
+SC_API int32_t sc_n_embd(sc_handle* h);
+
+// Writes the L2-normalised embedding of `text` into `out` (out_len >=
+// sc_n_embd). Returns the number of floats written or a negative SC_ERR_*.
+SC_API int32_t sc_embed(sc_handle* h, const char* text, float* out, int32_t out_len);
+
 // Converts a JSON Schema document into a GBNF grammar using llama.cpp's own
 // converter. Returns a malloc'd string to release with sc_string_free, or NULL
 // on error with the reason in *error_out (also to release with sc_string_free).

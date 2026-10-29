@@ -17,6 +17,10 @@ final inferenceEngineProvider = Provider<InferenceEngine>((ref) {
   return engine;
 });
 
+/// The same engine, seen as an embedding backend.
+final embeddingEngineProvider = Provider<EmbeddingEngine>(
+    (ref) => ref.watch(inferenceEngineProvider) as EmbeddingEngine);
+
 /// Frees the ~1.1 GB model when Android reports memory pressure
 /// (`onTrimMemory`, surfaced by Flutter as [didHaveMemoryPressure]) while the
 /// app is in the background. The next run reloads it.

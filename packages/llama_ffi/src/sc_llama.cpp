@@ -319,6 +319,119 @@ SC_API int32_t sc_next(sc_handle* h, char* buf, int32_t buf_len) {
   return n;
 }
 
+SC_API sc_handle* sc_load_embedder(const char* model_path, int32_t n_ctx, int32_t n_threads) {
+  g_load_error.clear();
+  if (model_path == nullptr || n_ctx <= 0 || n_threads <= 0) {
+    g_load_error = "invalid arguments";
+    return nullptr;
+  }
+  llama_model_params mparams = llama_model_default_params();
+  mparams.n_gpu_layers = 0;
+  mparams.load_mode = LLAMA_LOAD_MODE_MMAP;
+  llama_model* model = llama_model_load_from_file(model_path, mparams);
+  if (model == nullptr) {
+    g_load_error = std::string("failed to load model: ") + model_path;
+    return nullptr;
+  }
+
+  llama_context_params cparams = llama_context_default_params();
+  // Encoder models attend to the whole input at once, so one ubatch must hold it.
+  cparams.n_ctx = static_cast<uint32_t>(n_ctx);
+  cparams.n_batch = static_cast<uint32_t>(n_ctx);
+  cparams.n_ubatch = static_cast<uint32_t>(n_ctx);
+  cparams.n_seq_max = 1;
+  cparams.n_threads = n_threads;
+  cparams.n_threads_batch = n_threads;
+  cparams.embeddings = true;
+  cparams.no_perf = true;
+
+  auto* h = new sc_handle();
+  cparams.abort_callback = abort_cb;
+  cparams.abort_callback_data = h;
+  llama_context* ctx = llama_init_from_model(model, cparams);
+  if (ctx == nullptr) {
+    g_load_error = "failed to create embedding context";
+    llama_model_free(model);
+    delete h;
+    return nullptr;
+  }
+  if (llama_pooling_type(ctx) == LLAMA_POOLING_TYPE_NONE) {
+    g_load_error = "model has no pooling; not a sentence-embedding model";
+    llama_free(ctx);
+    llama_model_free(model);
+    delete h;
+    return nullptr;
+  }
+  h->model = model;
+  h->ctx = ctx;
+  h->vocab = llama_model_get_vocab(model);
+  return h;
+}
+
+SC_API int32_t sc_n_embd(sc_handle* h) {
+  return h == nullptr ? 0 : llama_model_n_embd_out(h->model);
+}
+
+SC_API int32_t sc_embed(sc_handle* h, const char* text, float* out, int32_t out_len) {
+  if (h == nullptr || text == nullptr || out == nullptr) {
+    return SC_ERR_INVALID;
+  }
+  const int32_t n_embd = sc_n_embd(h);
+  if (out_len < n_embd) {
+    h->error = "output buffer too small";
+    return SC_ERR_BUFFER;
+  }
+  h->cancelled.store(false);
+
+  const int32_t len = static_cast<int32_t>(std::strlen(text));
+  const int32_t n_needed = -llama_tokenize(h->vocab, text, len, nullptr, 0, true, false);
+  if (n_needed <= 0) {
+    h->error = "failed to tokenize text";
+    return SC_ERR_TOKENIZE;
+  }
+  std::vector<llama_token> tokens(n_needed);
+  if (llama_tokenize(h->vocab, text, len, tokens.data(), n_needed, true, false) < 0) {
+    h->error = "failed to tokenize text";
+    return SC_ERR_TOKENIZE;
+  }
+  const int32_t n_ctx = sc_n_ctx(h);
+  if (static_cast<int32_t>(tokens.size()) > n_ctx) {
+    tokens.resize(n_ctx);  // keep the start; notes are short in practice
+  }
+
+  llama_memory_clear(llama_get_memory(h->ctx), true);
+  llama_batch batch = llama_batch_init(static_cast<int32_t>(tokens.size()), 0, 1);
+  for (size_t i = 0; i < tokens.size(); i++) {
+    batch.token[i] = tokens[i];
+    batch.pos[i] = static_cast<llama_pos>(i);
+    batch.n_seq_id[i] = 1;
+    batch.seq_id[i][0] = 0;
+    batch.logits[i] = 1;  // pooling reads every position
+  }
+  batch.n_tokens = static_cast<int32_t>(tokens.size());
+  const int32_t rc = llama_decode(h->ctx, batch);
+  llama_batch_free(batch);
+  if (rc != 0) {
+    h->error = "llama_decode failed with code " + std::to_string(rc);
+    return rc == 2 ? SC_ERR_CANCELLED : SC_ERR_DECODE;
+  }
+
+  const float* embd = llama_get_embeddings_seq(h->ctx, 0);
+  if (embd == nullptr) {
+    h->error = "no pooled embedding returned";
+    return SC_ERR_DECODE;
+  }
+  double norm = 0.0;
+  for (int32_t i = 0; i < n_embd; i++) {
+    norm += static_cast<double>(embd[i]) * embd[i];
+  }
+  norm = norm > 0.0 ? std::sqrt(norm) : 1.0;
+  for (int32_t i = 0; i < n_embd; i++) {
+    out[i] = static_cast<float>(embd[i] / norm);
+  }
+  return n_embd;
+}
+
 SC_API void sc_cancel(sc_handle* h) {
   if (h != nullptr) {
     h->cancelled.store(true);

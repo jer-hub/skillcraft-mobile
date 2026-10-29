@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import '../storage/database.dart';
+import '../storage/vector_store.dart';
 
 /// A function a tool script can reach through `__host(name, payload)`.
 typedef HostFunction = FutureOr<Object?> Function(Map<String, Object?> payload);
@@ -25,6 +26,22 @@ Map<String, HostFunction> sqlFunctions(AppDatabase db) => {
       'sql.execute': (p) {
         final r = db.execute(_sql(p), _params(p));
         return {'changes': r.changes, 'lastInsertRowId': r.lastInsertRowId};
+      },
+    };
+
+/// `host.vec.remember` / `host.vec.search` over a [VectorStore].
+Map<String, HostFunction> vectorFunctions(VectorStore store) => {
+      'vec.remember': (p) async {
+        final text = p['text'];
+        if (text is! String) throw ArgumentError('text is required');
+        return {'id': await store.remember(text)};
+      },
+      'vec.search': (p) async {
+        final query = p['query'];
+        if (query is! String) throw ArgumentError('query is required');
+        final k = p['k'];
+        final hits = await store.search(query, k: k is num ? k.toInt() : 5);
+        return [for (final h in hits) h.toJson()];
       },
     };
 

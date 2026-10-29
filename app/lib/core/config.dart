@@ -20,7 +20,11 @@ class EngineConfig {
 /// File and folder names shared across the app.
 abstract final class AppPaths {
   static const defaultModelFile = 'Qwen2.5-1.5B-Instruct-Q4_K_M.gguf';
+  static const embeddingModelFile = 'nomic-embed-text-v1.5.Q4_K_M.gguf';
   static const databaseFile = 'skillcraft.db';
+
+  /// Relative to the app-specific external files dir: imported GGUF models.
+  static const modelsDir = 'models';
 
   /// Relative to the app-specific external files dir (scoped storage).
   static const skillsDir = 'Documents/SkillCraft/skills';

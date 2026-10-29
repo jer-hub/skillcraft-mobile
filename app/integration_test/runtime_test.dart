@@ -2,7 +2,10 @@
 // development PC: QuickJS, sqlite-vec, the bundled tool servers, and a full
 // agent run with the real model.
 //
-//   flutter test integration_test/runtime_test.dart -d <device>
+//   flutter test integration_test/runtime_test.dart -d <device> --no-uninstall
+//
+// Always pass --no-uninstall: by default the app is uninstalled afterwards,
+// which wipes Android/data/com.skillcraft.app, including the imported models.
 import 'dart:io';
 
 import 'package:flutter/services.dart';
@@ -20,6 +23,7 @@ import 'package:skillcraft/mcp/tool_servers.dart';
 import 'package:skillcraft/skills/skill_compiler.dart';
 import 'package:skillcraft/skills/skill_parser.dart';
 import 'package:skillcraft/storage/database.dart';
+import 'package:skillcraft/storage/vector_store.dart';
 import 'package:sqlite_vec_ffi/sqlite_vec_ffi.dart';
 
 /// Records calendar writes instead of touching the user's real calendar.
@@ -139,6 +143,7 @@ void main() {
           Capability.calendar: calendarFunctions(calendar),
         },
         commonFunctions: logFunctions((_) {}),
+        enabled: {'local_db', 'calendar'},
       );
       expect(failures, isEmpty);
       host = h;
@@ -187,10 +192,101 @@ void main() {
     });
   });
 
+  group('notes with real embeddings', () {
+    late LlamaEngine engine;
+    late AppDatabase db;
+    late VectorStore store;
+
+    setUpAll(() async {
+      final base = await getExternalStorageDirectory();
+      final model = File('${base!.path}/${AppPaths.modelsDir}/${AppPaths.embeddingModelFile}');
+      if (!model.existsSync()) fail('embedding model missing at ${model.path}');
+      registerSqliteVec();
+      engine = LlamaEngine();
+      final sw = Stopwatch()..start();
+      await engine.loadEmbedder(model.path);
+      // ignore: avoid_print
+      print('EMBED_LOAD ${sw.elapsedMilliseconds} ms · dim ${engine.embeddingDimensions}');
+    });
+    tearDownAll(() => engine.dispose());
+
+    setUp(() async {
+      db = AppDatabase.inMemory();
+      store = VectorStore(db, engine);
+      await store.open();
+    });
+    tearDown(() => db.close());
+
+    test('embeddings are unit-length and deterministic', () async {
+      expect(engine.embeddingDimensions, 768);
+      final a = await engine.embed('search_query: hello');
+      final b = await engine.embed('search_query: hello');
+      expect(a, b);
+      final norm = a.fold<double>(0, (s, x) => s + x * x);
+      expect(norm, closeTo(1, 1e-3));
+    });
+
+    test('search ranks notes by meaning, not keywords', () async {
+      const notes = [
+        'The wifi password for the office is Tr0ub4dor',
+        "Dentist appointment moved to Thursday at 3pm",
+        'Buy oat milk, eggs and spinach on the way home',
+        'Our team retro will cover the failed release',
+      ];
+      final sw = Stopwatch()..start();
+      for (final n in notes) {
+        await store.remember(n);
+      }
+      final indexMs = sw.elapsedMilliseconds;
+
+      sw.reset();
+      final groceries = await store.search('what do I need from the supermarket', k: 2);
+      final network = await store.search('how do I get on the internet at work', k: 2);
+      final health = await store.search('when is my teeth checkup', k: 2);
+      // ignore: avoid_print
+      print('VEC_SEARCH index ${notes.length} notes $indexMs ms · 3 searches '
+          '${sw.elapsedMilliseconds} ms · top scores '
+          '${[groceries, network, health].map((h) => h.first.score.toStringAsFixed(3)).join(', ')}');
+
+      expect(groceries.first.text, contains('oat milk'));
+      expect(network.first.text, contains('wifi'));
+      expect(health.first.text, contains('Dentist'));
+      expect(groceries.first.score, greaterThan(groceries.last.score));
+    });
+
+    test('reopening keeps the index; a new dimension rebuilds it', () async {
+      final id = await store.remember('Locker combination 1-2-3');
+      await store.open();
+      expect((await store.search('locker', k: 1)).single.id, id);
+
+      db.setMeta('embedding_dim', '384'); // pretend the model changed
+      await store.open();
+      expect((await store.search('locker', k: 1)).single.id, id,
+          reason: 'notes are re-embedded after a rebuild');
+    });
+
+    test('notes tool server end to end', () async {
+      final (host, failures) = await startToolServers(
+        loadAsset: rootBundle.loadString,
+        capabilityFunctions: {Capability.vector: vectorFunctions(store)},
+        commonFunctions: logFunctions((_) {}),
+        enabled: {'notes'},
+      );
+      addTearDown(host.dispose);
+      expect(failures, isEmpty);
+
+      await host.callTool('remember_note', {'text': 'Parked on level 3, spot B12'});
+      await host.callTool('remember_note', {'text': 'Mom’s birthday is March 9'});
+      final r = await host.callTool('search_notes', {'query': 'where is my car', 'k': 1});
+      expect(r.isError, isFalse);
+      expect(((r.structured as Map)['notes'] as List).single['text'], contains('level 3'));
+    });
+  });
+
   group('agent with the real model', () {
     test('capture-tasks extracts and saves tasks', () async {
       final base = await getExternalStorageDirectory();
-      final model = File('${base!.path}/models/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf');
+      final model = File('${base!.path}/${AppPaths.modelsDir}/${AppPaths.defaultModelFile}');
       if (!model.existsSync()) {
         markTestSkipped('model not found at ${model.path}');
         return;
