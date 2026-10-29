@@ -19,30 +19,55 @@ Body.
 void main() {
   late Directory tmp;
   late SkillRepository repo;
-  var seedCalls = 0;
+  late Map<String, String> bundled;
 
   setUp(() {
     tmp = Directory.systemTemp.createTempSync('skills_test');
-    seedCalls = 0;
+    bundled = {'alpha.md': skillSource('alpha')};
     repo = SkillRepository(
       root: Directory(p.join(tmp.path, 'skills')),
-      loadSeedSkills: () async {
-        seedCalls++;
-        return {'alpha.md': skillSource('alpha')};
-      },
+      loadSeedSkills: () async => bundled,
     );
   });
 
   tearDown(() => tmp.deleteSync(recursive: true));
 
-  test('seeds bundled skills once', () async {
+  Future<List<String?>> names() async =>
+      (await repo.loadAll()).map((e) => e.skill?.name).toList();
+
+  test('seeds bundled skills; deleted seeds stay deleted', () async {
     await repo.ensureSeeded();
-    expect((await repo.loadAll()).single.skill?.name, 'alpha');
+    expect(await names(), ['alpha']);
 
     await repo.delete('alpha.md');
     await repo.ensureSeeded();
-    expect(await repo.loadAll(), isEmpty, reason: 'deleted seed stays deleted');
-    expect(seedCalls, 1);
+    expect(await names(), isEmpty);
+  });
+
+  test('skills added in an app update are seeded; edits are kept', () async {
+    await repo.ensureSeeded();
+    await repo.save('alpha.md', skillSource('alpha').replaceFirst('Body.', 'Mine.'));
+
+    bundled = {...bundled, 'beta.md': skillSource('beta')};
+    await repo.ensureSeeded();
+
+    expect(await names(), ['alpha', 'beta']);
+    expect((await repo.loadAll()).first.source, contains('Mine.'));
+  });
+
+  test('upgrades a legacy empty marker without re-adding deleted files', () async {
+    await repo.root.create(recursive: true);
+    File(p.join(repo.root.path, '.seeded')).writeAsStringSync('');
+    File(p.join(repo.root.path, 'alpha.md')).writeAsStringSync(skillSource('alpha'));
+    bundled = {...bundled, 'beta.md': skillSource('beta')};
+
+    await repo.ensureSeeded();
+    await repo.delete('beta.md');
+    await repo.ensureSeeded();
+
+    expect(await names(), ['alpha']);
+    expect(File(p.join(repo.root.path, '.seeded')).readAsLinesSync(),
+        ['alpha.md', 'beta.md']);
   });
 
   test('keeps invalid files with their issues', () async {

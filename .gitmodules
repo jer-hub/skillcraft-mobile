@@ -2,3 +2,11 @@
 	path = packages/llama_ffi/third_party/llama.cpp
 	url = https://github.com/ggml-org/llama.cpp.git
 	shallow = true
+[submodule "packages/quickjs_ffi/third_party/quickjs"]
+	path = packages/quickjs_ffi/third_party/quickjs
+	url = https://github.com/quickjs-ng/quickjs.git
+	shallow = true
+[submodule "packages/sqlite_vec_ffi/third_party/sqlite-vec"]
+	path = packages/sqlite_vec_ffi/third_party/sqlite-vec
+	url = https://github.com/asg017/sqlite-vec.git
+	shallow = true

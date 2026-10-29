@@ -43,6 +43,11 @@ dependencies:
   llama_ffi:
     path: ../packages/llama_ffi
   path: ^1.9.1
+  quickjs_ffi:
+    path: ../packages/quickjs_ffi
+  sqlite_vec_ffi:
+    path: ../packages/sqlite_vec_ffi
+  timezone: ^0.9.4
 
 dev_dependencies:
   flutter_test:
@@ -54,6 +59,8 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  integration_test:
+    sdk: flutter
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -67,6 +74,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/skills/
+    - assets/tools/
 
   # To add assets to your application, add an assets section, like this:
   # assets:

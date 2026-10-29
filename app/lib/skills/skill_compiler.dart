@@ -58,6 +58,7 @@ class CompiledSkill {
     required this.responseSchema,
     required this.grammar,
     required this.generationOptions,
+    required this.finalOnlyOptions,
     required this.warnings,
     required this._validator,
   });
@@ -81,6 +82,10 @@ class CompiledSkill {
 
   /// Sampling settings to run this skill with (grammar included).
   final GenerationOptions generationOptions;
+
+  /// Like [generationOptions], but the grammar only allows a final answer.
+  /// The agent uses it on its last step so a run always terminates.
+  final GenerationOptions finalOnlyOptions;
 
   /// Non-fatal adjustments, e.g. truncated inputs.
   final List<String> warnings;
@@ -273,9 +278,11 @@ class SkillCompiler {
     }
 
     final responseSchema = buildResponseSchema(skill, tools);
-    final schemaJson = jsonEncode(responseSchema);
-    final grammar = _grammarCache[schemaJson] ??=
-        await _engine.schemaToGbnf(schemaJson);
+    final grammar = await _grammarFor(responseSchema);
+    // Last agent step: same envelope, but only the `final` branch.
+    final finalGrammar = tools.isEmpty
+        ? grammar
+        : await _grammarFor((responseSchema['oneOf'] as List).first as Map<String, Object?>);
 
     return CompiledSkill._(
       skill: skill,
@@ -291,9 +298,19 @@ class SkillCompiler {
         maxTokens: maxOutputTokens,
         grammar: grammar,
       ),
+      finalOnlyOptions: GenerationOptions(
+        temperature: temperature,
+        maxTokens: maxOutputTokens,
+        grammar: finalGrammar,
+      ),
       warnings: warnings,
       validator: JsonSchema.create(responseSchema),
     );
+  }
+
+  Future<String> _grammarFor(Map<String, Object?> schema) async {
+    final json = jsonEncode(schema);
+    return _grammarCache[json] ??= await _engine.schemaToGbnf(json);
   }
 
   /// Applies defaults, checks required inputs and coerces string values to

@@ -38,18 +38,37 @@ class SkillRepository {
 
   static const _seededMarker = '.seeded';
 
-  /// Creates the folder and, the first time only, copies in the bundled
-  /// skills. Deleting a seeded skill later does not bring it back.
+  /// Creates the folder and copies in bundled skills that were never seeded
+  /// before. The marker file lists seeded names, so skills added in an app
+  /// update arrive, while a seeded skill the user deleted stays deleted and
+  /// an edited one is never overwritten.
   Future<void> ensureSeeded() async {
     await root.create(recursive: true);
     final marker = File(p.join(root.path, _seededMarker));
-    if (await marker.exists()) return;
-    for (final MapEntry(key: name, value: text)
-        in (await loadSeedSkills()).entries) {
+    final bundled = await loadSeedSkills();
+
+    final Set<String> seeded;
+    if (!await marker.exists()) {
+      seeded = {};
+    } else {
+      final listed = (await marker.readAsLines()).where((l) => l.trim().isNotEmpty);
+      // An empty marker predates the list: treat bundled files that are
+      // present as already seeded.
+      seeded = listed.isNotEmpty
+          ? listed.toSet()
+          : {
+              for (final name in bundled.keys)
+                if (await File(p.join(root.path, name)).exists()) name,
+            };
+    }
+
+    for (final MapEntry(key: name, value: text) in bundled.entries) {
+      if (seeded.contains(name)) continue;
       final file = File(p.join(root.path, name));
       if (!await file.exists()) await file.writeAsString(text);
+      seeded.add(name);
     }
-    await marker.writeAsString('');
+    await marker.writeAsString('${(seeded.toList()..sort()).join('\n')}\n');
   }
 
   /// Parses every `.md` file, sorted by file name.

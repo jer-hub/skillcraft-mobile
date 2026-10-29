@@ -2,42 +2,13 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:llama_ffi/llama_ffi.dart';
 import 'package:skillcraft/core/config.dart';
-import 'package:skillcraft/inference/llama_engine.dart';
 import 'package:skillcraft/mcp/tool_spec.dart';
 import 'package:skillcraft/skills/skill.dart';
 import 'package:skillcraft/skills/skill_compiler.dart';
 import 'package:skillcraft/skills/skill_parser.dart';
 
-/// ~4 characters per token; records grammar conversions.
-class FakeEngine implements InferenceEngine {
-  final schemasConverted = <String>[];
-
-  @override
-  bool get isLoaded => true;
-  @override
-  int get lastReusedTokens => 0;
-  @override
-  Future<int> tokenCount(String text) async => (text.length / 4).ceil();
-  @override
-  Future<String> schemaToGbnf(String schemaJson) async {
-    schemasConverted.add(schemaJson);
-    return 'root ::= "{}"';
-  }
-
-  @override
-  Future<void> load(String modelPath, EngineConfig config) async {}
-  @override
-  Future<void> unload() async {}
-  @override
-  Stream<String> generate(String prompt, GenerationOptions options) =>
-      const Stream.empty();
-  @override
-  void cancel() {}
-  @override
-  Future<void> dispose() async {}
-}
+import '../support/fakes.dart';
 
 const saveTool = ToolSpec(
   name: 'save_task_to_db',
