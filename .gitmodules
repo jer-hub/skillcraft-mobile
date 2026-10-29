@@ -1,0 +1,4 @@
+[submodule "packages/llama_ffi/third_party/llama.cpp"]
+	path = packages/llama_ffi/third_party/llama.cpp
+	url = https://github.com/ggml-org/llama.cpp.git
+	shallow = true

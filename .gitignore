@@ -1,0 +1,13 @@
+# Model weights are imported on device, never committed
+*.gguf
+*.bin
+
+# IDE / OS
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Local Claude Code settings
+.claude/settings.local.json

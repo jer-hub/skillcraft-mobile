@@ -1,0 +1,15 @@
+# Run with `dart run ffigen --config ffigen.yaml`.
+name: LlamaFfiBindings
+description: |
+  Bindings for `src/llama_ffi.h`.
+
+  Regenerate bindings with `dart run ffigen --config ffigen.yaml`.
+output: 'lib/llama_ffi_bindings_generated.dart'
+headers:
+  entry-points:
+    - 'src/llama_ffi.h'
+  include-directives:
+    - 'src/llama_ffi.h'
+comments:
+  style: any
+  length: full
