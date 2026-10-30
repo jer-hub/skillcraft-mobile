@@ -116,7 +116,7 @@ class CompiledSkill {
   /// Throws [SkillOutputException] if it is not valid against the schema;
   /// with the grammar active that indicates a converter gap, not the model.
   SkillResponse parse(String raw) {
-    final Object? value;
+    Object? value;
     try {
       value = jsonDecode(raw);
     } on FormatException catch (e) {
@@ -125,8 +125,15 @@ class CompiledSkill {
     stripPlaceholders(value, responseSchema);
     final result = _validator.validate(value);
     if (!result.isValid) {
-      throw SkillOutputException(
-          'Reply does not match the schema: ${result.errors.join('; ')}', raw);
+      // Stripping must never turn a valid reply into a failure (e.g. dropping
+      // the only item of a list that needs at least one): fall back to the
+      // reply as the model wrote it.
+      final original = jsonDecode(raw);
+      if (!_validator.validate(original).isValid) {
+        throw SkillOutputException(
+            'Reply does not match the schema: ${result.errors.join('; ')}', raw);
+      }
+      value = original;
     }
     if (tools.isEmpty) return FinalOutput(value);
 

@@ -187,9 +187,19 @@ OnOutput? _parseOnOutput(YamlNode? node, Map<String, Object?> outputSchema,
     return null;
   }
   if (forEach is String) {
-    final props = outputSchema['properties'];
-    final prop = props is Map ? props[forEach] : null;
-    if (prop is! Map || prop['type'] != 'array') {
+    // The property may live at the top level or in a oneOf/anyOf branch
+    // (e.g. a has_actions gate with an empty-list and a non-empty branch).
+    final branches = [
+      outputSchema,
+      for (final key in const ['oneOf', 'anyOf'])
+        ...?(outputSchema[key] as List?)?.whereType<Map>(),
+    ];
+    final isArray = branches.any((b) {
+      final props = b['properties'];
+      final prop = props is Map ? props[forEach] : null;
+      return prop is Map && prop['type'] == 'array';
+    });
+    if (!isArray) {
       issue('"on_output.for_each" must name an array property of output_schema',
           node.nodes['for_each']);
     }

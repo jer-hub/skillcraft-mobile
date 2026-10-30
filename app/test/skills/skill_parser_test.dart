@@ -37,8 +37,8 @@ void main() {
     expect(skill.inputs.single.type, InputType.string);
     expect(skill.inputs.single.required, isTrue);
     expect(
-      (skill.outputSchema['properties'] as Map)['tasks'],
-      containsPair('type', 'array'),
+      ((skill.outputSchema['oneOf'] as List)[1]['properties'] as Map)['tasks'],
+      containsPair('minItems', 1),
     );
     expect(skill.instructions, startsWith('# Instructions'));
     expect(skill.tools, isEmpty);

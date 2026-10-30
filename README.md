@@ -154,6 +154,13 @@ few minutes.
 | Battery | about 6-7 mAh per skill run (~0.13% of 4910 mAh), estimated |
 | Release APK | 73 MB |
 
-Known limitation: the 1.5B model tends to invent a task when the text has
-none. Items whose required field is a placeholder like "None" are dropped,
-but other invented tasks still come through.
+Known limitations of the 1.5B model:
+
+- **Texts with no actions.** The task skills make the model answer a yes/no
+  `has_actions` question first, and the grammar ties the list to it (`false`
+  forces an empty list). That took no-task inputs from 0 of 6 returning an
+  empty list to 4 of 6. News-like text and casual remarks can still produce
+  invented tasks.
+- **Very long inputs.** When an input is truncated to fit the context, the
+  model may lose the part that mattered and copy a task from the skill's
+  example instead.

@@ -75,7 +75,7 @@ void main() {
   List<ChatItem> items() => container.read(chatControllerProvider).items;
 
   test('a slash command runs the skill and its on_output hook', () async {
-    container = make(replies: ['{"tasks":[{"title":"Call Ana","priority":"high"}]}']);
+    container = make(replies: ['{"has_actions":true,"tasks":[{"title":"Call Ana","priority":"high"}]}']);
 
     await ctl().submit('/capture-tasks Call Ana today');
 
@@ -83,6 +83,7 @@ void main() {
     final run = items().last as SkillRun;
     expect(run.status, RunStatus.finished);
     expect(run.output, {
+      'has_actions': true,
       'tasks': [
         {'title': 'Call Ana', 'priority': 'high'},
       ],
@@ -114,7 +115,7 @@ void main() {
   });
 
   test('a plain message matching a skill gets a suggestion, not a run', () async {
-    container = make(replies: ['{"tasks":[]}']);
+    container = make(replies: ['{"has_actions":false,"tasks":[]}']);
 
     await ctl().submit('extract the actionable tasks from these meeting notes');
 
@@ -154,7 +155,7 @@ void main() {
   test('plain chat carries earlier plain turns but not skill runs', () async {
     container = make(withMatcher: false, replies: [
       'First answer.',
-      '{"tasks":[]}',
+      '{"has_actions":false,"tasks":[]}',
       'Second answer.',
     ]);
 
@@ -170,7 +171,7 @@ void main() {
   });
 
   test('cancel marks the run as stopped', () async {
-    container = make(replies: ['{"tasks":[{"title":"a long title","priority":"low"}]}']);
+    container = make(replies: ['{"has_actions":true,"tasks":[{"title":"a long title","priority":"low"}]}']);
     // Cancel as soon as the first tokens stream in.
     container.listen(chatControllerProvider, (_, s) {
       final last = s.items.lastOrNull;

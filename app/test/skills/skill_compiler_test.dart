@@ -160,8 +160,8 @@ output_schema: {type: object, properties: {}}
   group('parse', () {
     test('accepts schema-valid output', () async {
       final compiled = await compiler.compile(extractTasks, {'raw_text': 'x'});
-      final response = compiled.parse(
-          '{"tasks":[{"title":"Send budget","priority":"high","due_date":"Friday"}]}');
+      final response = compiled.parse('{"has_actions":true,'
+          '"tasks":[{"title":"Send budget","priority":"high","due_date":"Friday"}]}');
       expect((response as FinalOutput).output, isA<Map>());
     });
 
@@ -170,13 +170,40 @@ output_schema: {type: object, properties: {}}
       expect(() => compiled.parse('Sure! Here are your tasks'),
           throwsA(isA<SkillOutputException>()));
       expect(
-          () => compiled.parse('{"tasks":[{"title":"x","priority":"urgent"}]}'),
+          () => compiled.parse(
+              '{"has_actions":true,"tasks":[{"title":"x","priority":"urgent"}]}'),
           throwsA(isA<SkillOutputException>()));
+    });
+
+    test('the has_actions gate must agree with the list', () async {
+      final compiled = await compiler.compile(extractTasks, {'raw_text': 'x'});
+      expect((compiled.parse('{"has_actions":false,"tasks":[]}') as FinalOutput).output,
+          {'has_actions': false, 'tasks': <Object?>[]});
+      for (final bad in [
+        '{"has_actions":false,"tasks":[{"title":"x","priority":"low"}]}',
+        '{"has_actions":true,"tasks":[]}',
+        '{"tasks":[]}',
+      ]) {
+        expect(() => compiled.parse(bad), throwsA(isA<SkillOutputException>()), reason: bad);
+      }
+      // The gate comes first in the grammar: required properties keep the
+      // schema's order, so the model answers yes/no before listing anything.
+      final branch = (extractTasks.outputSchema['oneOf'] as List)[1] as Map;
+      expect((branch['properties'] as Map).keys.first, 'has_actions');
+    });
+
+    test('stripping never turns a valid reply into a failure', () async {
+      final compiled = await compiler.compile(extractTasks, {'raw_text': 'x'});
+      // Dropping the "None" item would leave has_actions:true with no tasks.
+      final out = (compiled.parse(
+              '{"has_actions":true,"tasks":[{"title":"None","priority":"low"}]}') as FinalOutput)
+          .output as Map;
+      expect(out['tasks'], hasLength(1));
     });
 
     test('drops placeholder values from optional fields only', () async {
       final compiled = await compiler.compile(extractTasks, {'raw_text': 'x'});
-      final response = compiled.parse('{"tasks":['
+      final response = compiled.parse('{"has_actions":true,"tasks":['
           '{"title":"A","priority":"high","due_date":"None"},'
           '{"title":"B","priority":"low","due_date":" n/a "},'
           '{"title":"C","priority":"low","due_date":""},'
@@ -191,15 +218,7 @@ output_schema: {type: object, properties: {}}
 
     test('drops array items whose required text is a placeholder', () async {
       final compiled = await compiler.compile(extractTasks, {'raw_text': 'x'});
-      // Verbatim device outputs for the inputs ".", "12345 67890" and filler.
-      for (final raw in [
-        '{"tasks":[{"title":"None","priority":"low"}]}',
-        '{"tasks":[{"title":"N/A","priority":"low"},{"title":"Call Ana","priority":"high"}]}',
-      ]) {
-        final out = (compiled.parse(raw) as FinalOutput).output as Map;
-        expect((out['tasks'] as List).every((t) => t['title'] != 'None' && t['title'] != 'N/A'), isTrue);
-      }
-      final kept = (compiled.parse('{"tasks":[{"title":"N/A","priority":"low"},'
+      final kept = (compiled.parse('{"has_actions":true,"tasks":[{"title":"N/A","priority":"low"},'
               '{"title":"Call Ana","priority":"high"}]}') as FinalOutput)
           .output as Map;
       expect(kept['tasks'], [

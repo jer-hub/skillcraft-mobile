@@ -80,7 +80,7 @@ void main() {
   test('output-only skill finishes in one step', () async {
     final skill =
         parseSkill(File('assets/skills/extract-tasks.md').readAsStringSync());
-    final engine = FakeEngine(['{"tasks":[{"title":"A","priority":"low"}]}']);
+    final engine = FakeEngine(['{"has_actions":true,"tasks":[{"title":"A","priority":"low"}]}']);
 
     final events = await runner(engine).run(skill, {'raw_text': 'notes'}).toList();
 
@@ -172,7 +172,7 @@ void main() {
   test('a repetition loop is stopped and the complete items are kept', () async {
     final skill =
         parseSkill(File('assets/skills/extract-tasks.md').readAsStringSync());
-    final looped = '{"tasks":[{"title":"Pay tuition","priority":"high"},'
+    final looped = '{"has_actions":true,"tasks":[{"title":"Pay tuition","priority":"high"},'
         '${List.filled(30, '{"title":"Buy supplies","priority":"high"}').join(',')}]}';
     final engine = FakeEngine([looped]);
 
@@ -189,12 +189,13 @@ void main() {
   test('output cut off by the token limit is salvaged', () async {
     final skill =
         parseSkill(File('assets/skills/extract-tasks.md').readAsStringSync());
-    final engine = FakeEngine(['{"tasks":[{"title":"A","priority":"low"},{"title":"B","pri']);
+    final engine = FakeEngine(['{"has_actions":true,"tasks":[{"title":"A","priority":"low"},{"title":"B","pri']);
 
     final done = (await runner(engine).run(skill, {'raw_text': 'x'}).toList()).last as AgentFinished;
 
     expect(done.partial, isTrue);
     expect(done.output, {
+      'has_actions': true,
       'tasks': [
         {'title': 'A', 'priority': 'low'},
       ],
@@ -204,7 +205,7 @@ void main() {
   test('the reply may use all context left after the prompt', () async {
     final skill =
         parseSkill(File('assets/skills/extract-tasks.md').readAsStringSync());
-    final engine = FakeEngine(['{"tasks":[]}']);
+    final engine = FakeEngine(['{"has_actions":false,"tasks":[]}']);
     final compiler = SkillCompiler(engine);
     final events = await AgentRunner(engine: engine, compiler: compiler, mcp: mcp)
         .run(skill, {'raw_text': 'x'})
