@@ -92,6 +92,8 @@ void main() {
     expect(run.toolCalls.single.result?.text, 'saved Call Ana');
     expect(db.calls.single.$2['title'], 'Call Ana');
     expect(device.keepScreenOn, [true, false], reason: 'screen kept on only while running');
+    expect(device.runEvents, ['start:/capture-tasks', 'stop'],
+        reason: 'foreground service only for the duration of the run');
     expect(container.read(chatControllerProvider).busy, isFalse);
   });
 
@@ -168,6 +170,27 @@ void main() {
     expect(last, contains('First answer.'));
     expect(last, isNot(contains('/capture-tasks')));
     expect(last, endsWith('And how private is it?<|im_end|>\n<|im_start|>assistant\n'));
+  });
+
+  test('Stop on the run notification cancels the run', () async {
+    container = make(replies: ['{"has_actions":true,"tasks":[{"title":"a long title","priority":"low"}]}']);
+    container.listen(chatControllerProvider, (_, s) {
+      final last = s.items.lastOrNull;
+      if (last is SkillRun && last.streamed.isNotEmpty) device.tapStop();
+    });
+
+    await ctl().submit('/capture-tasks something');
+
+    expect((items().last as SkillRun).status, RunStatus.cancelled);
+    expect(device.runEvents.last, 'stop');
+  });
+
+  test('notification permission is asked once; plain replies use the service too', () async {
+    container = make(withMatcher: false, replies: ['one', 'two']);
+    await ctl().submit('hi');
+    await ctl().submit('again');
+    expect(device.notificationAsks, 1);
+    expect(device.runEvents, ['start:a reply', 'stop', 'start:a reply', 'stop']);
   });
 
   test('cancel marks the run as stopped', () async {

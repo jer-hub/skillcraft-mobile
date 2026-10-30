@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
@@ -24,11 +25,53 @@ abstract interface class DeviceServices {
 
   /// Total and available RAM in bytes (from /proc/meminfo).
   Future<({int total, int available})> memory();
+
+  /// Starts the foreground service that keeps a run alive off screen.
+  Future<void> startRun(String label);
+  Future<void> stopRun();
+
+  /// "Stop" tapped on the run notification.
+  Stream<void> get stopRequests;
+
+  /// Asks for notification permission (Android 13+); true if granted.
+  Future<bool> ensureNotificationPermission();
+
+  /// Whether Android exempts SkillCraft from battery optimisation.
+  Future<bool> isBatteryExempt();
+
+  /// Opens the system dialog that grants the exemption.
+  Future<void> requestBatteryExemption();
 }
 
 class PlatformDeviceServices implements DeviceServices {
+  PlatformDeviceServices() {
+    _channel.setMethodCallHandler((call) async {
+      if (call.method == 'stopRequested') _stops.add(null);
+    });
+  }
+
   static const _channel = MethodChannel('skillcraft/device');
   static const _progress = EventChannel('skillcraft/import_progress');
+  final _stops = StreamController<void>.broadcast();
+
+  @override
+  Future<void> startRun(String label) => _channel.invokeMethod('startRun', {'label': label});
+
+  @override
+  Future<void> stopRun() => _channel.invokeMethod('stopRun');
+
+  @override
+  Stream<void> get stopRequests => _stops.stream;
+
+  @override
+  Future<bool> ensureNotificationPermission() async =>
+      await _channel.invokeMethod<bool>('ensureNotificationPermission') ?? false;
+
+  @override
+  Future<bool> isBatteryExempt() async => await _channel.invokeMethod<bool>('isBatteryExempt') ?? false;
+
+  @override
+  Future<void> requestBatteryExemption() => _channel.invokeMethod('requestBatteryExemption');
 
   @override
   Future<({String name, int code})> appVersion() async {

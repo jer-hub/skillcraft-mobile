@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/config.dart';
+import '../core/run_activity.dart';
 import '../settings/app_settings.dart';
 import 'llama_engine.dart';
 
@@ -40,6 +41,8 @@ class EngineLifecycle with WidgetsBindingObserver {
 
   @override
   void didHaveMemoryPressure() {
+    // Never mid-run: the foreground service exists to finish that run.
+    if (RunActivity.isActive) return;
     if (_state != AppLifecycleState.resumed && _engine.isLoaded) {
       _engine.cancel();
       _engine.unload();

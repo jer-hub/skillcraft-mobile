@@ -98,6 +98,8 @@ class SettingsScreen extends ConsumerWidget {
                         : {...s.disabledToolServers, def.id},
                   )),
             ),
+          const _Header('Background'),
+          const _BatteryExemptionTile(),
           const _Header('Skill suggestions'),
           _SliderTile(
             title: 'Suggestion threshold',
@@ -157,6 +159,60 @@ class SettingsScreen extends ConsumerWidget {
     if (running != null) return running.tools.map((t) => t.name).join(', ');
     final failure = s.failures[def.id];
     return failure == null ? 'Not running' : 'Not started: $failure';
+  }
+}
+
+final batteryExemptProvider =
+    FutureProvider.autoDispose<bool>((ref) => ref.watch(deviceServicesProvider).isBatteryExempt());
+
+/// "Keep runs alive in the background": some phones (e.g. vivo) stop apps
+/// that work off screen; the exemption lets a run finish.
+class _BatteryExemptionTile extends ConsumerStatefulWidget {
+  const _BatteryExemptionTile();
+
+  @override
+  ConsumerState<_BatteryExemptionTile> createState() => _BatteryExemptionTileState();
+}
+
+class _BatteryExemptionTileState extends ConsumerState<_BatteryExemptionTile>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  // Back from the system dialog: show the new state.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) ref.invalidate(batteryExemptProvider);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final exempt = ref.watch(batteryExemptProvider).value;
+    return ListTile(
+      leading: Icon(exempt == true ? Icons.battery_charging_full : Icons.battery_alert_outlined),
+      title: const Text('Keep runs alive in the background'),
+      subtitle: Text(exempt == true
+          ? 'On. Skill runs can finish while you use other apps.'
+          : 'Off. Some phones stop SkillCraft a few minutes after you switch away '
+              'during a run.'),
+      trailing: exempt == true
+          ? null
+          : FilledButton.tonal(
+              onPressed: exempt == null
+                  ? null
+                  : () => ref.read(deviceServicesProvider).requestBatteryExemption(),
+              child: const Text('Allow'),
+            ),
+    );
   }
 }
 

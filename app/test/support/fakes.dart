@@ -86,6 +86,32 @@ class FakeDeviceServices implements DeviceServices {
   String importName = 'model.gguf';
   final _progress = StreamController<ImportProgress>.broadcast();
 
+  /// "start:<label>" / "stop" in call order.
+  final runEvents = <String>[];
+  final _stops = StreamController<void>.broadcast();
+  bool batteryExempt = false;
+  int notificationAsks = 0;
+
+  /// Simulates "Stop" on the run notification.
+  void tapStop() => _stops.add(null);
+
+  @override
+  Future<void> startRun(String label) async => runEvents.add('start:$label');
+  @override
+  Future<void> stopRun() async => runEvents.add('stop');
+  @override
+  Stream<void> get stopRequests => _stops.stream;
+  @override
+  Future<bool> ensureNotificationPermission() async {
+    notificationAsks++;
+    return true;
+  }
+
+  @override
+  Future<bool> isBatteryExempt() async => batteryExempt;
+  @override
+  Future<void> requestBatteryExemption() async => batteryExempt = true;
+
   @override
   Future<({String name, int code})> appVersion() async => (name: '1.0.0', code: 1);
 

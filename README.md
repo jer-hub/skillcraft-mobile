@@ -176,9 +176,11 @@ the run, and Android deletes the imported models with it. `flutter drive`
 | `memory_test` | No memory growth over repeated generations, skill runs and reloads |
 | `perf_test` | Engine and UI timings |
 
-Keep the screen on during long device runs: Android moves an app that is off
-screen to the slow cores (about 3x slower), and some phones kill it after a
-few minutes.
+Keep the screen on during long device test runs: Android moves an app that
+is off screen to the slow cores (about 3x slower), and some phones kill it
+after a few minutes. In the app itself, a foreground service with a Stop
+action protects each run; `tool/device/background_run.sh` measures a run with
+the screen off.
 
 ## Measured on the Snapdragon 680
 
@@ -192,6 +194,7 @@ few minutes.
 | Grammar guarantee | 50/50 inputs schema-valid (one salvaged as partial) |
 | Battery | about 6-7 mAh per skill run (~0.13% of 4910 mAh), estimated |
 | Release APK | 73 MB |
+| `/extract-tasks`, screen off | 118-126 s and not killed, with or without the battery exemption (before the run service: about 170 s, then killed after about 4 min) |
 
 Known limitations of the 1.5B model:
 

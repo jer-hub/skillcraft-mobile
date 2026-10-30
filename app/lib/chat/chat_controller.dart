@@ -6,6 +6,7 @@ import 'package:llama_ffi/llama_ffi.dart' show GenerationOptions, LlamaException
 
 import '../agent/agent_runner.dart';
 import '../core/device_services.dart';
+import '../core/run_activity.dart';
 import '../inference/chat_template.dart';
 import '../inference/engine_providers.dart';
 import '../inference/llama_engine.dart';
@@ -166,7 +167,7 @@ class ChatController extends Notifier<ChatState> {
     final runner = AgentRunner(engine: deps.engine, compiler: deps.compiler, mcp: deps.mcp);
     _runner = runner;
     final sw = Stopwatch()..start();
-    await _busy(deps, () async {
+    await _busy(deps, skill.command, () async {
       await for (final event in runner.run(skill, inputs)) {
         final run = _item<SkillRun>(id);
         if (run == null) continue;
@@ -213,7 +214,7 @@ class ChatController extends Notifier<ChatState> {
     _add(AssistantMessage(id, ''));
     final engine = deps.engine;
     _plainEngine = engine;
-    await _busy(deps, () async {
+    await _busy(deps, 'a reply', () async {
       try {
         final prompt = await _chatPrompt(deps);
         await for (final piece in engine.generate(
@@ -259,23 +260,41 @@ class ChatController extends Notifier<ChatState> {
     }
   }
 
-  Future<void> _busy(ChatDeps deps, Future<void> Function() work) async {
+  /// Marks the chat busy for [work] and keeps it alive meanwhile: screen on
+  /// while SkillCraft is visible, and a foreground service (with a Stop
+  /// action) when the user switches away.
+  Future<void> _busy(ChatDeps deps, String label, Future<void> Function() work) async {
     state = state.copyWith(busy: true);
-    await _keepScreenOn(deps, true);
+    RunActivity.begin();
+    if (!_askedNotifications) {
+      // Ask without waiting: the service works either way (the permission
+      // only controls whether its notification is visible), and the run
+      // should not sit idle behind the dialog.
+      _askedNotifications = true;
+      unawaited(_quietly(deps.device.ensureNotificationPermission));
+    }
+    await _quietly(() => deps.device.setKeepScreenOn(true));
+    await _quietly(() => deps.device.startRun(label));
+    final stops = deps.device.stopRequests.listen((_) => cancel());
     try {
       await work();
     } finally {
-      await _keepScreenOn(deps, false);
+      await stops.cancel();
+      await _quietly(deps.device.stopRun);
+      await _quietly(() => deps.device.setKeepScreenOn(false));
+      RunActivity.end();
       state = state.copyWith(busy: false);
     }
   }
 
-  Future<void> _keepScreenOn(ChatDeps deps, bool on) async {
+  bool _askedNotifications = false;
+
+  /// Device helpers are best effort: without them a run is only slower or
+  /// more likely to be stopped by the system, never wrong.
+  static Future<void> _quietly(Future<Object?> Function() call) async {
     try {
-      await deps.device.setKeepScreenOn(on);
-    } catch (_) {
-      // Not fatal: the run is just slower if the screen turns off.
-    }
+      await call();
+    } catch (_) {}
   }
 
   SkillSuggestion? _resolve(int id) {

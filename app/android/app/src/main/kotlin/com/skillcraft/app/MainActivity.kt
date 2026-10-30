@@ -17,6 +17,12 @@ import kotlin.concurrent.thread
 /**
  * Device services for SkillCraft over `skillcraft/device`:
  *  - appVersion(): versionName / versionCode from the installed package.
+ *  - startRun({label}) / stopRun(): RunService (foreground service + wake
+ *    lock) for the duration of a skill run; its notification's Stop arrives
+ *    in Dart as an incoming "stopRequested" call.
+ *  - ensureNotificationPermission(), isBatteryExempt(),
+ *    requestBatteryExemption(): Android 13+ notifications and the system's
+ *    "ignore battery optimisations" dialog.
  *  - setKeepScreenOn(bool): keeps the app on screen during agent runs; Android
  *    moves off-screen apps to slower cores (~3x slower inference measured).
  *  - importDocument({dest}): system file picker, streamed straight to `dest`
@@ -27,14 +33,48 @@ class MainActivity : FlutterActivity() {
     private var pendingImport: MethodChannel.Result? = null
     private var pendingDest: String? = null
     private var progressSink: EventChannel.EventSink? = null
+    private var pendingNotificationPermission: MethodChannel.Result? = null
     private val main = Handler(Looper.getMainLooper())
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         val messenger = flutterEngine.dartExecutor.binaryMessenger
 
-        MethodChannel(messenger, "skillcraft/device").setMethodCallHandler { call, result ->
+        val device = MethodChannel(messenger, "skillcraft/device")
+        RunService.onStopRequested = { main.post { device.invokeMethod("stopRequested", null) } }
+        device.setMethodCallHandler { call, result ->
             when (call.method) {
+                "startRun" -> {
+                    RunService.start(this, call.argument<String>("label") ?: "a skill")
+                    result.success(null)
+                }
+                "stopRun" -> {
+                    RunService.stop(this)
+                    result.success(null)
+                }
+                "ensureNotificationPermission" -> {
+                    if (android.os.Build.VERSION.SDK_INT < 33 ||
+                        checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) ==
+                        android.content.pm.PackageManager.PERMISSION_GRANTED
+                    ) {
+                        result.success(true)
+                    } else {
+                        pendingNotificationPermission = result
+                        requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), NOTIFY_REQUEST)
+                    }
+                }
+                "isBatteryExempt" -> {
+                    val pm = getSystemService(POWER_SERVICE) as android.os.PowerManager
+                    result.success(pm.isIgnoringBatteryOptimizations(packageName))
+                }
+                "requestBatteryExemption" -> {
+                    // Allowed for sideloaded apps; shows the system's own dialog.
+                    @Suppress("BatteryLife")
+                    val intent = Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                        .setData(Uri.parse("package:$packageName"))
+                    startActivity(intent)
+                    result.success(null)
+                }
                 "appVersion" -> {
                     val info = packageManager.getPackageInfo(packageName, 0)
                     @Suppress("DEPRECATION")
@@ -151,7 +191,21 @@ class MainActivity : FlutterActivity() {
         return "model.gguf" to -1L
     }
 
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != NOTIFY_REQUEST) return
+        val granted = grantResults.firstOrNull() == android.content.pm.PackageManager.PERMISSION_GRANTED
+        pendingNotificationPermission?.success(granted)
+        pendingNotificationPermission = null
+    }
+
+    override fun onDestroy() {
+        RunService.onStopRequested = null
+        super.onDestroy()
+    }
+
     companion object {
         private const val IMPORT_REQUEST = 4207
+        private const val NOTIFY_REQUEST = 4208
     }
 }

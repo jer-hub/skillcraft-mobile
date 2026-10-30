@@ -13,5 +13,9 @@ First public release.
 - Tool servers (MCP over JSON-RPC, sandboxed in QuickJS): tasks in SQLite,
   device calendar, notes with semantic search (sqlite-vec + nomic-embed).
 - Bundled skills: `/extract-tasks`, `/capture-tasks` (saves each task).
+- Runs keep going when you switch apps or turn the screen off: a foreground
+  service with a Stop action holds a wake lock for the run only, and the model
+  is never unloaded mid-run. Settings → Background can exempt SkillCraft from
+  battery optimisation for phones that still stop it.
 - Measured on a Snapdragon 680: 7.0 tok/s, repeat skill runs in 7-23 s thanks
   to prompt-prefix reuse, about 1.4 GB of memory while a model is loaded.
