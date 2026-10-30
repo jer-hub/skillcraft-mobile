@@ -31,11 +31,15 @@ class NoteHit {
 /// Notes with semantic search: rows in `notes`, vectors in a sqlite-vec
 /// `vec0` table keyed by note id.
 class VectorStore {
-  VectorStore(this._db, this._embedder, {this.profile = const EmbeddingProfile()});
+  VectorStore(this._db, this._embedder,
+      {this.profile = const EmbeddingProfile(), this.onChange});
 
   final AppDatabase _db;
   final EmbeddingEngine _embedder;
   final EmbeddingProfile profile;
+
+  /// Called after a note is added, so screens can refresh.
+  final void Function()? onChange;
 
   static const _table = 'note_embeddings';
   static const _dimKey = 'embedding_dim';
@@ -66,6 +70,7 @@ class VectorStore {
     final vector = await _embedder.embed('${profile.documentPrefix}$trimmed');
     final id = _db.execute('INSERT INTO notes (text) VALUES (?)', [trimmed]).lastInsertRowId;
     _db.execute('INSERT INTO $_table (rowid, embedding) VALUES (?, ?)', [id, _blob(vector)]);
+    onChange?.call();
     return id;
   }
 

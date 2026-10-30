@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import '../core/config.dart';
 import '../inference/engine_providers.dart';
 import '../settings/app_settings.dart';
+import '../storage/data_version.dart';
 import '../storage/database.dart';
 import '../storage/storage_providers.dart';
 import '../storage/vector_store.dart';
@@ -46,7 +47,7 @@ final vectorStoreProvider = FutureProvider<VectorStore?>((ref) async {
     if (!engine.hasEmbedder) {
       await engine.loadEmbedder(file.path, threads: ref.watch(engineConfigProvider).threads);
     }
-    final store = VectorStore(db, engine);
+    final store = VectorStore(db, engine, onChange: ref.read(dataVersionProvider.notifier).bump);
     await store.open();
     return store;
   } catch (e) {
@@ -67,7 +68,7 @@ final toolServersProvider = FutureProvider<ToolServers>((ref) async {
   final (host, failures) = await startToolServers(
     loadAsset: rootBundle.loadString,
     capabilityFunctions: {
-      Capability.sql: sqlFunctions(db),
+      Capability.sql: sqlFunctions(db, onWrite: ref.read(dataVersionProvider.notifier).bump),
       Capability.calendar: calendarFunctions(ref.watch(calendarBridgeProvider)),
       if (vectors != null) Capability.vector: vectorFunctions(vectors),
     },

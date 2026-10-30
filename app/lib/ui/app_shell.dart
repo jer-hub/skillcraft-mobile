@@ -7,8 +7,9 @@ import 'nav.dart';
 import 'settings/settings_screen.dart';
 import 'setup/setup_screen.dart';
 import 'skills/skills_screen.dart';
+import 'tasks/tasks_screen.dart';
 
-/// Setup until a chat model is installed, then Chat / Skills / Settings.
+/// Setup until a chat model is installed, then Chat / Tasks / Skills / Settings.
 class AppShell extends ConsumerWidget {
   const AppShell({super.key});
 
@@ -24,13 +25,14 @@ class AppShell extends ConsumerWidget {
     return Scaffold(
       body: IndexedStack(
         index: tab.index,
-        children: const [ChatScreen(), SkillsScreen(), SettingsScreen()],
+        children: const [ChatScreen(), TasksScreen(), SkillsScreen(), SettingsScreen()],
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: tab.index,
         onDestinationSelected: (i) => ref.read(homeTabProvider.notifier).show(HomeTab.values[i]),
         destinations: const [
           NavigationDestination(icon: Icon(Icons.chat_bubble_outline), label: 'Chat'),
+          NavigationDestination(icon: Icon(Icons.task_alt), label: 'Tasks'),
           NavigationDestination(icon: Icon(Icons.bolt_outlined), label: 'Skills'),
           NavigationDestination(icon: Icon(Icons.tune), label: 'Settings'),
         ],

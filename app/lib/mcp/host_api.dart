@@ -21,10 +21,13 @@ class HostApi {
 }
 
 /// `host.sql.query` / `host.sql.execute` against the app database.
-Map<String, HostFunction> sqlFunctions(AppDatabase db) => {
+/// [onWrite] runs after each `sql.execute` that changed rows, so the UI can
+/// refresh when a skill saves something.
+Map<String, HostFunction> sqlFunctions(AppDatabase db, {void Function()? onWrite}) => {
       'sql.query': (p) => db.query(_sql(p), _params(p)),
       'sql.execute': (p) {
         final r = db.execute(_sql(p), _params(p));
+        if (r.changes > 0) onWrite?.call();
         return {'changes': r.changes, 'lastInsertRowId': r.lastInsertRowId};
       },
     };

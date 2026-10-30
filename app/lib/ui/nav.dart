@@ -1,6 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-enum HomeTab { chat, skills, settings }
+enum HomeTab { chat, tasks, skills, settings }
 
 class HomeTabController extends Notifier<HomeTab> {
   @override
