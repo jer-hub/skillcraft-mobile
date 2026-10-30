@@ -12,6 +12,10 @@ First public release.
 - Skills tab with a live-validating editor.
 - Tool servers (MCP over JSON-RPC, sandboxed in QuickJS): tasks in SQLite,
   device calendar, notes with semantic search (sqlite-vec + nomic-embed).
+  The calendar goes through SkillCraft's own small Kotlin bridge
+  (CalendarContract) instead of a plugin; events land in the primary
+  writable calendar in the phone's time zone, and all-day events keep
+  their date.
 - Bundled skills: `/extract-tasks`, `/capture-tasks` (saves each task).
 - First-run model download from pinned Hugging Face URLs: resumable, paused
   from the app or the notification, with a mobile-data warning, a free-space

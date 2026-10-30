@@ -57,6 +57,13 @@ android {
     }
 
     buildTypes {
+        // With the upload key present, debug and profile builds (flutter run,
+        // device tests) are signed with it too, so they install over the
+        // release app instead of forcing an uninstall that wipes its models.
+        if (hasReleaseKey) {
+            getByName("debug") { signingConfig = signingConfigs.getByName("release") }
+            getByName("profile") { signingConfig = signingConfigs.getByName("release") }
+        }
         release {
             signingConfig = if (hasReleaseKey) {
                 signingConfigs.getByName("release")

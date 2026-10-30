@@ -29,12 +29,17 @@ import kotlin.concurrent.thread
  *  - importDocument({dest}): system file picker, streamed straight to `dest`
  *    (no intermediate cache copy, which matters for 1 GB model files).
  * Import progress is sent on the `skillcraft/import_progress` event channel.
+ *
+ * `skillcraft/calendar` (see CalendarStore): requestPermission(), then
+ * insert({title, start, end, description}) -> id, list({from, to}) and
+ * delete({id}); times are epoch milliseconds.
  */
 class MainActivity : FlutterActivity() {
     private var pendingImport: MethodChannel.Result? = null
     private var pendingDest: String? = null
     private var progressSink: EventChannel.EventSink? = null
     private var pendingNotificationPermission: MethodChannel.Result? = null
+    private var pendingCalendarPermission: MethodChannel.Result? = null
     private val main = Handler(Looper.getMainLooper())
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -120,6 +125,50 @@ class MainActivity : FlutterActivity() {
             }
         }
 
+        val calendar = CalendarStore(contentResolver)
+        MethodChannel(messenger, "skillcraft/calendar").setMethodCallHandler { call, result ->
+            if (call.method == "requestPermission") {
+                if (hasCalendarPermission()) {
+                    result.success(true)
+                } else if (pendingCalendarPermission != null) {
+                    result.error("busy", "Already asking for calendar access", null)
+                } else {
+                    pendingCalendarPermission = result
+                    requestPermissions(CalendarStore.PERMISSIONS, CALENDAR_REQUEST)
+                }
+                return@setMethodCallHandler
+            }
+            if (!hasCalendarPermission()) {
+                result.error("permission", "Calendar permission denied", null)
+                return@setMethodCallHandler
+            }
+            // Content provider queries can be slow; keep them off the UI thread.
+            thread(name = "calendar") {
+                try {
+                    val value: Any? = when (call.method) {
+                        "insert" -> calendar.insert(
+                            call.argument<String>("title")!!,
+                            call.argument<Number>("start")!!.toLong(),
+                            call.argument<Number>("end")!!.toLong(),
+                            call.argument<String>("description"),
+                        ).toString()
+                        "list" -> calendar.list(
+                            call.argument<Number>("from")!!.toLong(),
+                            call.argument<Number>("to")!!.toLong(),
+                        )
+                        "delete" -> calendar.delete(call.argument<String>("id")!!.toLong())
+                        else -> {
+                            main.post { result.notImplemented() }
+                            return@thread
+                        }
+                    }
+                    main.post { result.success(value) }
+                } catch (e: Exception) {
+                    main.post { result.error("calendar", e.message ?: e.toString(), null) }
+                }
+            }
+        }
+
         EventChannel(messenger, "skillcraft/import_progress").setStreamHandler(
             object : EventChannel.StreamHandler {
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
@@ -202,10 +251,22 @@ class MainActivity : FlutterActivity() {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode != NOTIFY_REQUEST) return
-        val granted = grantResults.firstOrNull() == android.content.pm.PackageManager.PERMISSION_GRANTED
-        pendingNotificationPermission?.success(granted)
-        pendingNotificationPermission = null
+        val granted = grantResults.isNotEmpty() &&
+            grantResults.all { it == android.content.pm.PackageManager.PERMISSION_GRANTED }
+        when (requestCode) {
+            NOTIFY_REQUEST -> {
+                pendingNotificationPermission?.success(granted)
+                pendingNotificationPermission = null
+            }
+            CALENDAR_REQUEST -> {
+                pendingCalendarPermission?.success(granted)
+                pendingCalendarPermission = null
+            }
+        }
+    }
+
+    private fun hasCalendarPermission() = CalendarStore.PERMISSIONS.all {
+        checkSelfPermission(it) == android.content.pm.PackageManager.PERMISSION_GRANTED
     }
 
     override fun onDestroy() {
@@ -216,5 +277,6 @@ class MainActivity : FlutterActivity() {
     companion object {
         private const val IMPORT_REQUEST = 4207
         private const val NOTIFY_REQUEST = 4208
+        private const val CALENDAR_REQUEST = 4209
     }
 }

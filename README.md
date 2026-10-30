@@ -172,11 +172,16 @@ flutter test integration_test/runtime_test.dart -d <device> --no-uninstall
 **Always pass `--no-uninstall`.** Without it Flutter uninstalls the app after
 the run, and Android deletes the imported models with it. `flutter drive`
 (used for profile-mode runs) does the same and has no flag to prevent it.
-Tests install a debug-signed build. If the phone has the release APK signed
-with your own key, Flutter uninstalls it first (signatures differ), so the
-models go even with `--no-uninstall`; back them up first.
-`integration_test/download_test.dart` downloads the embedding model over
-Wi-Fi into a temporary folder (pause, resume, SHA-256 check).
+When `android/key.properties` exists, debug and profile builds are signed with
+the same upload key as release builds, so a test installs over the release
+app and keeps its models. Without it they use the debug key, and Flutter has
+to uninstall a release-signed app first (models included); back them up then.
+
+- `integration_test/download_test.dart` downloads the embedding model over
+  Wi-Fi into a temporary folder (pause, resume, SHA-256 check).
+- `integration_test/calendar_test.dart` creates "SkillCraft test – delete me"
+  in the phone's **real** calendar, lists it through the calendar tool, then
+  deletes it. Run it only with the phone owner's OK.
 
 | Suite | Checks |
 | --- | --- |

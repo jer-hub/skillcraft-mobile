@@ -25,7 +25,7 @@ class ToolServers {
   final Map<String, Object> failures;
 }
 
-final calendarBridgeProvider = Provider<CalendarBridge>((ref) => DeviceCalendarBridge());
+final calendarBridgeProvider = Provider<CalendarBridge>((ref) => PlatformCalendarBridge());
 
 /// `<app external files>/models`, where imported GGUF files live.
 final modelsDirectoryProvider = FutureProvider<Directory>((ref) async {

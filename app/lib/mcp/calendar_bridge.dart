@@ -1,5 +1,4 @@
-import 'package:device_calendar/device_calendar.dart';
-import 'package:timezone/timezone.dart' as tz;
+import 'package:flutter/services.dart';
 
 import 'host_api.dart';
 
@@ -45,9 +44,9 @@ DateTime? _date(Map<String, Object?> p, String key) {
   return parsed;
 }
 
-/// [CalendarBridge] over the Android calendar provider.
-class DeviceCalendarBridge implements CalendarBridge {
-  final _plugin = DeviceCalendarPlugin();
+/// [CalendarBridge] over the `skillcraft/calendar` channel (CalendarStore.kt).
+class PlatformCalendarBridge implements CalendarBridge {
+  static const _channel = MethodChannel('skillcraft/calendar');
 
   @override
   Future<String> insert({
@@ -56,20 +55,13 @@ class DeviceCalendarBridge implements CalendarBridge {
     DateTime? end,
     String? description,
   }) async {
-    final calendar = await _writableCalendar();
-    final event = Event(
-      calendar.id,
-      title: title,
-      description: description,
-      // UTC needs no timezone database; the provider shows local time.
-      start: tz.TZDateTime.from(start.toUtc(), tz.UTC),
-      end: tz.TZDateTime.from((end ?? start.add(const Duration(hours: 1))).toUtc(), tz.UTC),
-    );
-    final result = await _plugin.createOrUpdateEvent(event);
-    if (result == null || !result.isSuccess) {
-      throw StateError('Could not create event: ${_errors(result)}');
-    }
-    return result.data!;
+    final id = await _call<String>('insert', {
+      'title': title,
+      'start': start.millisecondsSinceEpoch,
+      'end': (end ?? start.add(const Duration(hours: 1))).millisecondsSinceEpoch,
+      'description': description,
+    });
+    return id!;
   }
 
   @override
@@ -77,41 +69,42 @@ class DeviceCalendarBridge implements CalendarBridge {
     required DateTime from,
     required DateTime to,
   }) async {
-    await _ensurePermission();
-    final calendars = await _plugin.retrieveCalendars();
-    final events = <Map<String, Object?>>[];
-    for (final c in calendars.data ?? const <Calendar>[]) {
-      final r = await _plugin.retrieveEvents(
-          c.id, RetrieveEventsParams(startDate: from, endDate: to));
-      for (final e in r.data ?? const <Event>[]) {
-        events.add({
-          'title': e.title,
-          'start': e.start?.toLocal().toIso8601String(),
-          'end': e.end?.toLocal().toIso8601String(),
-          'allDay': e.allDay ?? false,
-          'calendar': c.name,
-        });
+    final rows = await _call<List<Object?>>(
+        'list', {'from': from.millisecondsSinceEpoch, 'to': to.millisecondsSinceEpoch});
+    return [for (final r in rows ?? const []) calendarEventFromPlatform((r as Map).cast())];
+  }
+
+  /// Removes an event by id. Not exposed as a tool; tests use it to clean up.
+  Future<bool> delete(String eventId) async =>
+      await _call<bool>('delete', {'id': eventId}) ?? false;
+
+  Future<T?> _call<T>(String method, Map<String, Object?> args) async {
+    try {
+      if (await _channel.invokeMethod<bool>('requestPermission') != true) {
+        throw StateError('Calendar permission denied');
       }
+      return await _channel.invokeMethod<T>(method, args);
+    } on PlatformException catch (e) {
+      throw StateError(e.message ?? e.code);
     }
-    events.sort((a, b) => '${a['start']}'.compareTo('${b['start']}'));
-    return events;
+  }
+}
+
+/// Converts a CalendarStore row (epoch milliseconds) into the tool's shape.
+/// All-day events are stored at UTC midnight, so their dates are read in UTC.
+Map<String, Object?> calendarEventFromPlatform(Map<String, Object?> row) {
+  final allDay = row['allDay'] == true;
+  String time(Object? ms) {
+    final t = DateTime.fromMillisecondsSinceEpoch((ms as num).toInt(), isUtc: allDay);
+    return allDay ? DateTime(t.year, t.month, t.day).toIso8601String() : t.toIso8601String();
   }
 
-  Future<Calendar> _writableCalendar() async {
-    await _ensurePermission();
-    final calendars = (await _plugin.retrieveCalendars()).data ?? const <Calendar>[];
-    final writable = calendars.where((c) => c.isReadOnly != true).toList();
-    if (writable.isEmpty) throw StateError('No writable calendar on this device');
-    return writable.firstWhere((c) => c.isDefault == true, orElse: () => writable.first);
-  }
-
-  Future<void> _ensurePermission() async {
-    final has = await _plugin.hasPermissions();
-    if (has.data == true) return;
-    final granted = await _plugin.requestPermissions();
-    if (granted.data != true) throw StateError('Calendar permission denied');
-  }
-
-  static String _errors(Result<Object?>? r) =>
-      r == null ? 'no result' : r.errors.map((e) => e.errorMessage).join('; ');
+  return {
+    'id': row['id'],
+    'title': row['title'],
+    'start': time(row['start']),
+    'end': time(row['end']),
+    'allDay': allDay,
+    'calendar': row['calendar'],
+  };
 }
