@@ -91,6 +91,11 @@ flutter run --release
 
 The first native build compiles llama.cpp and takes 10-20 minutes.
 
+After running integration tests, run `flutter pub get` before a release build:
+`flutter test integration_test/...` registers the test-only `integration_test`
+plugin in the generated Android plugin list, and a release build (which
+leaves dev dependencies out) then fails to compile until it is regenerated.
+
 The Snapdragon 680's Cortex-A73/A53 cores are ARMv8.0-A, so llama.cpp is built
 with `-march=armv8-a` and no dotprod/i8mm instructions; a build for newer
 cores would crash on it with SIGILL.

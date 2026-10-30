@@ -104,6 +104,21 @@ class SkillRepository {
     return entries;
   }
 
+  /// One native watch per folder, shared by every listener in the isolate.
+  /// On Android, watching a folder twice returns the same inotify handle,
+  /// which trips an assertion in dart:io (it only expects reuse on Linux)
+  /// and would double the work anyway.
+  static final _watches = <String, Stream<FileSystemEvent>>{};
+
+  static Stream<FileSystemEvent> _folderEvents(Directory dir) {
+    final key = dir.absolute.path;
+    return _watches[key] ??= dir.watch().asBroadcastStream(onCancel: (sub) {
+      // Last listener gone: stop the native watch and forget it.
+      sub.cancel();
+      _watches.remove(key);
+    });
+  }
+
   /// Emits the current entries, then again whenever the folder changes.
   Stream<List<SkillEntry>> watch() async* {
     yield await loadAll();
@@ -111,7 +126,7 @@ class SkillRepository {
     // Editors write in several steps; collapse bursts into one reload.
     final changes = StreamController<void>();
     Timer? debounce;
-    final sub = root.watch().listen((_) {
+    final sub = _folderEvents(root).listen((_) {
       debounce?.cancel();
       debounce = Timer(const Duration(milliseconds: 300), () => changes.add(null));
     });

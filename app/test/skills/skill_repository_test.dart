@@ -94,6 +94,26 @@ void main() {
     expect(() => repo.save('../evil.md', 'x'), throwsArgumentError);
   });
 
+  test('two watchers on one folder share it and both see changes', () async {
+    await repo.ensureSeeded();
+    final other = SkillRepository(root: repo.root, loadSeedSkills: () async => bundled);
+    final a = repo.watch().take(2).toList();
+    final b = other.watch().take(2).toList();
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+    await repo.save('beta.md', skillSource('beta'));
+
+    final results = await Future.wait([a, b]).timeout(const Duration(seconds: 5));
+    for (final r in results) {
+      expect(r.last.map((e) => e.skill?.name), ['alpha', 'beta']);
+    }
+
+    // After both stop, a new watcher still works (the shared watch was released).
+    final c = repo.watch().take(2).toList();
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+    await repo.save('gamma.md', skillSource('gamma'));
+    expect((await c.timeout(const Duration(seconds: 5))).last, hasLength(3));
+  });
+
   test('watch emits again after a file changes', () async {
     await repo.ensureSeeded();
     final emissions = repo.watch().take(2).toList();
