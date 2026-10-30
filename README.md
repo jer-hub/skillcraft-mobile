@@ -1,29 +1,159 @@
 # SkillCraft
 
-Offline-first Android agent runtime: Markdown skills (mattpocock/skills format) executed by a local
-Qwen2.5-1.5B-Instruct Q4_K_M model via llama.cpp, with grammar-constrained JSON output dispatched to
-MCP-style tools hosted in QuickJS. Target device: Snapdragon 680 / 8 GB RAM.
+An offline-first agent runtime for Android phones. Skills are plain Markdown
+files (mattpocock/skills format: YAML frontmatter with inputs and an output
+schema, then instructions). A local Qwen2.5-1.5B-Instruct model runs them
+through llama.cpp with grammar-constrained decoding, so every reply is JSON
+that matches the skill's schema. Tools such as a SQLite task list, the device
+calendar and semantic notes search are MCP servers written in JavaScript and
+sandboxed in QuickJS. Nothing leaves the phone.
 
-## Layout
+Built and measured on a vivo V2205 (Snapdragon 680, 8 GB RAM, Android 14).
 
-| Path | Purpose |
-| --- | --- |
-| `app/` | Flutter application (Android, arm64-v8a, minSdk 24) |
-| `packages/llama_ffi/` | Flutter FFI plugin wrapping llama.cpp (`third_party/llama.cpp` submodule) |
+## What it does
 
-## Getting started
+- **Chat with skills.** Type `/` to pick a skill; skills that need several
+  inputs open a form. Runs show the JSON as it streams, each tool call, and
+  the output as cards. Plain messages get a normal reply, or a
+  "Run /skill?" suggestion when a skill matches (never run automatically).
+- **Write your own skills** in the Skills tab. The editor validates as you
+  type and points at the line with the problem.
+- **Tools over MCP.** `local_db` (save, list and update tasks), `calendar`
+  (create and list events) and `notes` (remember and search notes by
+  meaning). Each server runs in its own QuickJS sandbox and only gets the
+  host functions it is granted.
+- **Agent loop.** A skill can call tools for up to three steps; the last step
+  is constrained to a final answer, so a run always ends. An `on_output` hook
+  can call a tool for every item of the result (e.g. save each extracted task).
 
-```bash
-git submodule update --init --recursive
-cd app && flutter pub get
-flutter run
+### Example skill
+
+```markdown
+---
+name: capture-tasks
+description: Extracts actionable tasks from raw text and saves each one.
+inputs:
+  raw_text:
+    type: string
+    required: true
+on_output:
+  tool: save_task_to_db
+  for_each: tasks
+output_schema:
+  type: object
+  properties:
+    tasks:
+      type: array
+      items:
+        type: object
+        properties:
+          title: {type: string}
+          priority: {type: string, enum: [high, medium, low]}
+          due_date: {type: string}
+        required: [title, priority]
+---
+
+# Instructions
+1. Extract only concrete actions someone has to do...
 ```
 
-Requirements: Flutter (stable), Android SDK, Android NDK r26+ (set `ANDROID_HOME`).
+`tools: [...]` lists tools the model may call; `on_output` is a SkillCraft
+extension that runs a tool deterministically on the result.
 
-The model file (`Qwen2.5-1.5B-Instruct-Q4_K_M.gguf`) is imported on first run, not bundled.
+## Repository layout
 
-## Build notes
+| Path | What it is |
+| --- | --- |
+| `app/` | Flutter app (Android, arm64-v8a, minSdk 24) |
+| `app/assets/skills/` | Bundled skills, copied to the phone on first run |
+| `app/assets/tools/` | JavaScript MCP tool servers and their prelude |
+| `app/tool/device/` | adb scripts for performance and battery measurements |
+| `packages/llama_ffi/` | llama.cpp behind a small C API (`sc_llama`): generation, grammar, embeddings, prompt-prefix reuse |
+| `packages/quickjs_ffi/` | QuickJS-ng with an async host bridge for sandboxed tool scripts |
+| `packages/sqlite_vec_ffi/` | sqlite-vec registered as an extension of `package:sqlite3` |
 
-The Snapdragon 680 cores (Cortex-A73/A53) are ARMv8.0-A: llama.cpp is built with
-`-march=armv8-a` and **no** dotprod/i8mm flags, otherwise it crashes with SIGILL.
+Native sources come in as pinned git submodules: llama.cpp `b11983`,
+quickjs-ng `v0.17.0`, sqlite-vec `v0.1.9`.
+
+## Building
+
+Requirements: Flutter (stable), Android SDK with platform 36, NDK
+`28.2.13676358` and CMake `3.22.1`, `ANDROID_HOME` set.
+
+```bash
+git clone https://github.com/jer-hub/skillcraft-mobile.git
+cd skillcraft-mobile
+git submodule update --init --recursive
+cd app
+flutter pub get
+flutter run --release
+```
+
+The first native build compiles llama.cpp and takes 10-20 minutes.
+
+The Snapdragon 680's Cortex-A73/A53 cores are ARMv8.0-A, so llama.cpp is built
+with `-march=armv8-a` and no dotprod/i8mm instructions; a build for newer
+cores would crash on it with SIGILL.
+
+## Models
+
+Models are not bundled. On first run SkillCraft asks for them and streams the
+picked file into its own storage, then checks it against the published
+SHA-256:
+
+| Model | Role | Size | Source |
+| --- | --- | --- | --- |
+| `Qwen2.5-1.5B-Instruct-Q4_K_M.gguf` | Required: skills and chat | 1.12 GB | [Qwen/Qwen2.5-1.5B-Instruct-GGUF](https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF) |
+| `nomic-embed-text-v1.5.Q4_K_M.gguf` | Optional: notes search, skill suggestions | 84 MB | [nomic-ai/nomic-embed-text-v1.5-GGUF](https://huggingface.co/nomic-ai/nomic-embed-text-v1.5-GGUF) |
+
+You can also copy them over USB into
+`Android/data/com.skillcraft.app/files/models/` with those file names.
+
+## Testing
+
+```bash
+cd app
+flutter analyze
+flutter test                      # unit and widget tests, no device needed
+node tool/js/check_tools.mjs      # tool-server scripts against a fake host
+```
+
+On-device integration tests need the phone connected, unlocked and the
+models installed:
+
+```bash
+flutter test integration_test/runtime_test.dart -d <device> --no-uninstall
+```
+
+**Always pass `--no-uninstall`.** Without it Flutter uninstalls the app after
+the run, and Android deletes the imported models with it. `flutter drive`
+(used for profile-mode runs) does the same and has no flag to prevent it.
+
+| Suite | Checks |
+| --- | --- |
+| `runtime_test` | QuickJS sandbox, sqlite-vec, tool servers, embeddings, a full agent run |
+| `app_test` | The chat UI end to end; skill-suggestion scores |
+| `grammar_test` | 50 varied inputs (Taglish, injections, very long text) must all give schema-valid JSON |
+| `memory_test` | No memory growth over repeated generations, skill runs and reloads |
+| `perf_test` | Engine and UI timings |
+
+Keep the screen on during long device runs: Android moves an app that is off
+screen to the slow cores (about 3x slower), and some phones kill it after a
+few minutes.
+
+## Measured on the Snapdragon 680
+
+| | Result |
+| --- | --- |
+| Generation (release build) | 7.0 tok/s (raw llama.cpp: 7.8) |
+| Prompt reading | about 11-12 tok/s |
+| `/extract-tasks`, first run | about 60-65 s (most of it reading the 550-token prompt) |
+| `/extract-tasks`, repeat run | 7-23 s (the shared prompt prefix is reused from the KV cache) |
+| Memory while loaded | about 1.4 GB, back to about 250 MB on unload |
+| Grammar guarantee | 50/50 inputs schema-valid (one salvaged as partial) |
+| Battery | about 6-7 mAh per skill run (~0.13% of 4910 mAh), estimated |
+| Release APK | 73 MB |
+
+Known limitation: the 1.5B model tends to invent a task when the text has
+none. Items whose required field is a placeholder like "None" are dropped,
+but other invented tasks still come through.

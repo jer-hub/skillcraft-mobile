@@ -1,0 +1,59 @@
+# Static checks and host-side tests. Native code and on-device integration
+# tests need the phone and stay manual (see README, "Testing").
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # Submodules (llama.cpp, quickjs-ng, sqlite-vec) are only needed for
+      # native builds, not for analysis or the Dart unit tests.
+      - uses: actions/checkout@v7
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.8
+          cache: true
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Get packages
+        run: |
+          for dir in app packages/llama_ffi packages/quickjs_ffi packages/sqlite_vec_ffi; do
+            (cd "$dir" && flutter pub get)
+          done
+
+      - name: Analyze
+        run: |
+          for dir in app packages/llama_ffi packages/quickjs_ffi packages/sqlite_vec_ffi; do
+            echo "::group::$dir"
+            (cd "$dir" && flutter analyze)
+            echo "::endgroup::"
+          done
+
+      - name: Unit and widget tests (app)
+        working-directory: app
+        run: flutter test
+
+      - name: Unit tests (llama_ffi)
+        working-directory: packages/llama_ffi
+        run: flutter test
+
+      - name: Tool-server scripts
+        working-directory: app
+        run: |
+          for f in assets/tools/*.js; do node --check "$f"; done
+          node tool/js/check_tools.mjs
