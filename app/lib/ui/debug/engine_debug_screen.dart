@@ -2,13 +2,14 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:llama_ffi/llama_ffi.dart';
 
 import '../../inference/chat_template.dart';
 import '../../inference/engine_providers.dart';
+import '../../models/model_manager.dart';
+import '../../models/model_providers.dart';
 
 /// Phase 1 exit check: load a GGUF, stream a reply, log tokens/s and RSS.
 class EngineDebugScreen extends ConsumerStatefulWidget {
@@ -32,8 +33,9 @@ class _EngineDebugScreenState extends ConsumerState<EngineDebugScreen> {
   };
 
   final _pathCtrl = TextEditingController();
-  final _promptCtrl =
-      TextEditingController(text: 'Give me three tips for a productive day.');
+  final _promptCtrl = TextEditingController(
+    text: 'Give me three tips for a productive day.',
+  );
   final _output = StringBuffer();
   final _log = <String>[];
   StreamSubscription<String>? _run;
@@ -51,9 +53,13 @@ class _EngineDebugScreenState extends ConsumerState<EngineDebugScreen> {
   void _addLog(String line) => setState(() => _log.insert(0, line));
 
   Future<void> _pick() async {
-    final files = await FilePicker.pickFiles(type: FileType.any);
-    final path = files.isEmpty ? null : files.single.path;
-    if (path != null) setState(() => _pathCtrl.text = path);
+    final manager = await ref.read(modelManagerProvider.future);
+    final file = manager.installed(ModelRole.chat);
+    if (file != null) {
+      setState(() => _pathCtrl.text = file.path);
+    } else {
+      _addLog('No chat model installed; import one in Settings');
+    }
   }
 
   Future<void> _load() async {
@@ -63,9 +69,11 @@ class _EngineDebugScreenState extends ConsumerState<EngineDebugScreen> {
     final sw = Stopwatch()..start();
     try {
       await engine.load(_pathCtrl.text.trim(), config);
-      _addLog('Loaded in ${sw.elapsedMilliseconds} ms · '
-          'ctx ${config.contextTokens} · ${config.threads} threads · '
-          'RSS ${_rssMb()} MB');
+      _addLog(
+        'Loaded in ${sw.elapsedMilliseconds} ms · '
+        'ctx ${config.contextTokens} · ${config.threads} threads · '
+        'RSS ${_rssMb()} MB',
+      );
     } catch (e) {
       _addLog('Load failed: $e');
     } finally {
@@ -93,9 +101,11 @@ class _EngineDebugScreenState extends ConsumerState<EngineDebugScreen> {
     }
 
     final prompt = QwenChatTemplate.render([
-      ChatMessage.system(_jsonMode
-          ? 'Reply only with JSON matching: ${jsonEncode(_demoSchema)}'
-          : 'You are a helpful assistant.'),
+      ChatMessage.system(
+        _jsonMode
+            ? 'Reply only with JSON matching: ${jsonEncode(_demoSchema)}'
+            : 'You are a helpful assistant.',
+      ),
       ChatMessage.user(_promptCtrl.text),
     ]);
     final promptTokens = await engine.tokenCount(prompt);
@@ -113,27 +123,29 @@ class _EngineDebugScreenState extends ConsumerState<EngineDebugScreen> {
           ),
         )
         .listen(
-      (piece) {
-        firstTokenMs ??= sw.elapsedMilliseconds;
-        pieces++;
-        setState(() => _output.write(piece));
-      },
-      onError: (Object e) => _addLog('Generation error: $e'),
-      onDone: () {
-        final genMs = sw.elapsedMilliseconds - (firstTokenMs ?? 0);
-        final tps = pieces > 1 && genMs > 0
-            ? ((pieces - 1) * 1000 / genMs).toStringAsFixed(1)
-            : '-';
-        var line = 'prompt $promptTokens tok '
-            '(${engine.lastReusedTokens} cached) · first token '
-            '${firstTokenMs ?? '-'} ms · ~$tps tok/s · RSS ${_rssMb()} MB';
-        if (_jsonMode) {
-          line += ' · JSON ${_isJson(_output.toString()) ? 'valid' : 'INVALID'}';
-        }
-        _addLog(line);
-        setState(() => _busy = false);
-      },
-    );
+          (piece) {
+            firstTokenMs ??= sw.elapsedMilliseconds;
+            pieces++;
+            setState(() => _output.write(piece));
+          },
+          onError: (Object e) => _addLog('Generation error: $e'),
+          onDone: () {
+            final genMs = sw.elapsedMilliseconds - (firstTokenMs ?? 0);
+            final tps = pieces > 1 && genMs > 0
+                ? ((pieces - 1) * 1000 / genMs).toStringAsFixed(1)
+                : '-';
+            var line =
+                'prompt $promptTokens tok '
+                '(${engine.lastReusedTokens} cached) · first token '
+                '${firstTokenMs ?? '-'} ms · ~$tps tok/s · RSS ${_rssMb()} MB';
+            if (_jsonMode) {
+              line +=
+                  ' · JSON ${_isJson(_output.toString()) ? 'valid' : 'INVALID'}';
+            }
+            _addLog(line);
+            setState(() => _busy = false);
+          },
+        );
   }
 
   static bool _isJson(String s) {
@@ -165,19 +177,21 @@ class _EngineDebugScreenState extends ConsumerState<EngineDebugScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          Row(children: [
-            Expanded(
-              child: TextField(
-                controller: _pathCtrl,
-                decoration: const InputDecoration(labelText: 'GGUF path'),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _pathCtrl,
+                  decoration: const InputDecoration(labelText: 'GGUF path'),
+                ),
               ),
-            ),
-            IconButton(
-              onPressed: _busy ? null : _pick,
-              icon: const Icon(Icons.folder_open),
-              tooltip: 'Pick model file',
-            ),
-          ]),
+              IconButton(
+                onPressed: _busy ? null : _pick,
+                icon: const Icon(Icons.folder_open),
+                tooltip: 'Use installed model',
+              ),
+            ],
+          ),
           const SizedBox(height: 8),
           FilledButton(
             onPressed: _busy ? null : _load,
@@ -196,19 +210,21 @@ class _EngineDebugScreenState extends ConsumerState<EngineDebugScreen> {
             value: _jsonMode,
             onChanged: _busy ? null : (v) => setState(() => _jsonMode = v),
           ),
-          Row(children: [
-            Expanded(
-              child: FilledButton(
-                onPressed: !_busy && engine.isLoaded ? _generate : null,
-                child: const Text('Generate'),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton(
+                  onPressed: !_busy && engine.isLoaded ? _generate : null,
+                  child: const Text('Generate'),
+                ),
               ),
-            ),
-            const SizedBox(width: 8),
-            OutlinedButton(
-              onPressed: _busy ? engine.cancel : null,
-              child: const Text('Cancel'),
-            ),
-          ]),
+              const SizedBox(width: 8),
+              OutlinedButton(
+                onPressed: _busy ? engine.cancel : null,
+                child: const Text('Cancel'),
+              ),
+            ],
+          ),
           const SizedBox(height: 16),
           SelectableText(_output.toString()),
           const Divider(height: 32),
@@ -219,7 +235,9 @@ class _EngineDebugScreenState extends ConsumerState<EngineDebugScreen> {
             tilePadding: EdgeInsets.zero,
             title: const Text('System info'),
             children: [
-              SelectableText(engine.isLoaded ? llamaSystemInfo() : 'Load a model first'),
+              SelectableText(
+                engine.isLoaded ? llamaSystemInfo() : 'Load a model first',
+              ),
             ],
           ),
         ],

@@ -2,9 +2,11 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/config.dart';
+import '../settings/app_settings.dart';
 import 'llama_engine.dart';
 
-final engineConfigProvider = Provider<EngineConfig>((ref) => const EngineConfig());
+final engineConfigProvider = Provider<EngineConfig>(
+    (ref) => ref.watch(settingsProvider).value?.engineConfig ?? const EngineConfig());
 
 /// The app-wide inference engine. Override in tests with a fake.
 final inferenceEngineProvider = Provider<InferenceEngine>((ref) {

@@ -1,15 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'ui/debug/engine_debug_screen.dart';
-import 'ui/debug/skill_debug_screen.dart';
+import 'ui/app_shell.dart';
 
 void main() {
   runApp(const ProviderScope(child: SkillCraftApp()));
 }
 
 class SkillCraftApp extends StatelessWidget {
-  const SkillCraftApp({super.key});
+  const SkillCraftApp({super.key, this.home = const AppShell()});
+
+  /// Overridable for widget tests.
+  final Widget home;
 
   @override
   Widget build(BuildContext context) {
@@ -24,42 +26,7 @@ class SkillCraftApp extends StatelessWidget {
           brightness: Brightness.dark,
         ),
       ),
-      home: const HomeScreen(),
-    );
-  }
-}
-
-/// Placeholder until the chat, skills and setup screens land (Phase 4).
-class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('SkillCraft'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.description_outlined),
-            tooltip: 'Skill debug',
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => const SkillDebugScreen(),
-              ),
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.memory),
-            tooltip: 'Engine debug',
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => const EngineDebugScreen(),
-              ),
-            ),
-          ),
-        ],
-      ),
-      body: const Center(child: Text('No model loaded')),
+      home: home,
     );
   }
 }

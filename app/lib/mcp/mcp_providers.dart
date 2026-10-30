@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../core/config.dart';
 import '../inference/engine_providers.dart';
+import '../settings/app_settings.dart';
 import '../storage/database.dart';
 import '../storage/storage_providers.dart';
 import '../storage/vector_store.dart';
@@ -57,6 +58,12 @@ final vectorStoreProvider = FutureProvider<VectorStore?>((ref) async {
 final toolServersProvider = FutureProvider<ToolServers>((ref) async {
   final AppDatabase db = await ref.watch(databaseProvider.future);
   final vectors = await ref.watch(vectorStoreProvider.future);
+  // Restart servers only when the on/off set changes, not on every setting.
+  final disabled = (await ref.watch(settingsProvider.selectAsync(
+          (s) => (s.disabledToolServers.toList()..sort()).join('\n'))))
+      .split('\n')
+      .where((s) => s.isNotEmpty)
+      .toSet();
   final (host, failures) = await startToolServers(
     loadAsset: rootBundle.loadString,
     capabilityFunctions: {
@@ -65,6 +72,10 @@ final toolServersProvider = FutureProvider<ToolServers>((ref) async {
       if (vectors != null) Capability.vector: vectorFunctions(vectors),
     },
     commonFunctions: logFunctions((line) => debugPrint('[tool] $line')),
+    enabled: {
+      for (final s in bundledToolServers)
+        if (!disabled.contains(s.id)) s.id,
+    },
   );
   ref.onDispose(host.dispose);
   for (final MapEntry(:key, :value) in failures.entries) {

@@ -35,7 +35,6 @@ dependencies:
   yaml: ^3.1.4
   json_schema: ^5.2.2
   device_calendar: ^4.3.3
-  file_picker: ^13.3.0
   path_provider: ^2.1.6
   flutter_markdown_plus: ^1.0.12
   flutter_riverpod: ^3.4.3
@@ -48,6 +47,7 @@ dependencies:
   sqlite_vec_ffi:
     path: ../packages/sqlite_vec_ffi
   timezone: ^0.9.4
+  crypto: ^3.0.8
 
 dev_dependencies:
   flutter_test:

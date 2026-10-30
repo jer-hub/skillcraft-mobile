@@ -1,4 +1,8 @@
 import 'dart:async';
+import 'dart:io';
+import 'dart:math';
+
+import 'package:skillcraft/core/device_services.dart';
 
 import 'package:llama_ffi/llama_ffi.dart';
 import 'package:skillcraft/core/config.dart';
@@ -6,9 +10,32 @@ import 'package:skillcraft/inference/llama_engine.dart';
 import 'package:skillcraft/mcp/mcp_host.dart';
 
 /// ~4 characters per token. Replays [replies] in order, one per generate(),
-/// and records what it was asked.
-class FakeEngine implements InferenceEngine {
+/// and records what it was asked. Embeddings are hashed bag-of-words
+/// vectors, so texts sharing words score higher.
+class FakeEngine implements InferenceEngine, EmbeddingEngine {
   FakeEngine([List<String> replies = const []]) : replies = List.of(replies);
+
+  static const _dims = 64;
+
+  @override
+  bool get hasEmbedder => true;
+  @override
+  int get embeddingDimensions => _dims;
+  @override
+  Future<void> loadEmbedder(String modelPath, {int threads = 4}) async {}
+  @override
+  Future<void> unloadEmbedder() async {}
+
+  @override
+  Future<List<double>> embed(String text) async {
+    final v = List<double>.filled(_dims, 0);
+    final body = text.replaceFirst(RegExp(r'^search_(query|document): '), '');
+    for (final w in RegExp(r'[a-z]{3,}').allMatches(body.toLowerCase())) {
+      v[w[0].hashCode % _dims] += 1;
+    }
+    final norm = sqrt(v.fold<double>(0, (s, x) => s + x * x));
+    return [for (final x in v) norm == 0 ? 0.0 : x / norm];
+  }
 
   final List<String> replies;
   final prompts = <String>[];
@@ -51,7 +78,34 @@ class FakeEngine implements InferenceEngine {
   Future<void> dispose() async {}
 }
 
-typedef FakeTool = FutureOr<Object?> Function(Map<String, Object?> args);
+/// Records keep-screen-on calls; "imports" by writing [importBytes] to dest.
+class FakeDeviceServices implements DeviceServices {
+  final keepScreenOn = <bool>[];
+  List<int>? importBytes;
+  String importName = 'model.gguf';
+  final _progress = StreamController<ImportProgress>.broadcast();
+
+  @override
+  Future<void> setKeepScreenOn(bool on) async => keepScreenOn.add(on);
+
+  @override
+  Future<ImportedFile?> importDocument(String dest) async {
+    final bytes = importBytes;
+    if (bytes == null) return null;
+    _progress.add((copied: bytes.length, total: bytes.length));
+    await File(dest).writeAsBytes(bytes);
+    return (name: importName, bytes: bytes.length);
+  }
+
+  @override
+  Stream<ImportProgress> get importProgress => _progress.stream;
+
+  @override
+  Future<({int total, int available})> memory() async =>
+      (total: 8 << 30, available: 4 << 30);
+}
+
+typedef FakeTool =FutureOr<Object?> Function(Map<String, Object?> args);
 
 /// An MCP server in Dart, answering like the JS prelude does.
 class FakeMcpTransport implements McpTransport {
