@@ -107,6 +107,13 @@ class FakeDeviceServices implements DeviceServices {
     return true;
   }
 
+  int free = 1 << 40;
+  bool metered = false;
+  @override
+  Future<int> freeBytes(String path) async => free;
+  @override
+  Future<bool> isMeteredNetwork() async => metered;
+
   @override
   Future<bool> isBatteryExempt() async => batteryExempt;
   @override

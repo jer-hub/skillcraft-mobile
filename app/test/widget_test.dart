@@ -34,7 +34,8 @@ void main() {
 
     expect(find.text('Welcome to SkillCraft'), findsOneWidget);
     expect(find.textContaining('Memory: 8.0 GB'), findsOneWidget);
-    expect(find.text('Import .gguf file'), findsNWidgets(2));
+    expect(find.text('Import file'), findsNWidgets(2));
+    expect(find.textContaining('Download ('), findsNWidgets(2));
   });
 
   testWidgets('output view shows array items as cards', (tester) async {

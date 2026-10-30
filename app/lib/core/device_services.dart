@@ -26,6 +26,12 @@ abstract interface class DeviceServices {
   /// Total and available RAM in bytes (from /proc/meminfo).
   Future<({int total, int available})> memory();
 
+  /// Free bytes on the volume holding [path].
+  Future<int> freeBytes(String path);
+
+  /// True on mobile data or another network that may charge per byte.
+  Future<bool> isMeteredNetwork();
+
   /// Starts the foreground service that keeps a run alive off screen.
   Future<void> startRun(String label);
   Future<void> stopRun();
@@ -53,6 +59,14 @@ class PlatformDeviceServices implements DeviceServices {
   static const _channel = MethodChannel('skillcraft/device');
   static const _progress = EventChannel('skillcraft/import_progress');
   final _stops = StreamController<void>.broadcast();
+
+  @override
+  Future<int> freeBytes(String path) async =>
+      (await _channel.invokeMethod<num>('freeBytes', {'path': path}))?.toInt() ?? 0;
+
+  @override
+  Future<bool> isMeteredNetwork() async =>
+      await _channel.invokeMethod<bool>('isMeteredNetwork') ?? true;
 
   @override
   Future<void> startRun(String label) => _channel.invokeMethod('startRun', {'label': label});

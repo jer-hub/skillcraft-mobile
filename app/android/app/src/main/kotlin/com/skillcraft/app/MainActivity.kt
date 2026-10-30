@@ -23,6 +23,7 @@ import kotlin.concurrent.thread
  *  - ensureNotificationPermission(), isBatteryExempt(),
  *    requestBatteryExemption(): Android 13+ notifications and the system's
  *    "ignore battery optimisations" dialog.
+ *  - freeBytes({path}), isMeteredNetwork(): checks before a model download.
  *  - setKeepScreenOn(bool): keeps the app on screen during agent runs; Android
  *    moves off-screen apps to slower cores (~3x slower inference measured).
  *  - importDocument({dest}): system file picker, streamed straight to `dest`
@@ -74,6 +75,14 @@ class MainActivity : FlutterActivity() {
                         .setData(Uri.parse("package:$packageName"))
                     startActivity(intent)
                     result.success(null)
+                }
+                "freeBytes" -> {
+                    val path = call.argument<String>("path") ?: filesDir.path
+                    result.success(android.os.StatFs(path).availableBytes)
+                }
+                "isMeteredNetwork" -> {
+                    val cm = getSystemService(CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+                    result.success(cm.isActiveNetworkMetered)
                 }
                 "appVersion" -> {
                     val info = packageManager.getPackageInfo(packageName, 0)

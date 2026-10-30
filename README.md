@@ -136,9 +136,11 @@ Check the signer with
 
 ## Models
 
-Models are not bundled. On first run SkillCraft asks for them and streams the
-picked file into its own storage, then checks it against the published
-SHA-256:
+Models are not bundled. On first run SkillCraft offers to **download** them
+from Hugging Face or to **import** a file you already have. Downloads come
+from URLs pinned to a fixed Hugging Face commit, warn you first on mobile data,
+check free space, can be paused and resumed (also from the notification), and
+are checked against the published SHA-256 before use:
 
 | Model | Role | Size | Source |
 | --- | --- | --- | --- |
@@ -147,6 +149,9 @@ SHA-256:
 
 You can also copy them over USB into
 `Android/data/com.skillcraft.app/files/models/` with those file names.
+
+**Privacy:** the `INTERNET` permission is used only for these two downloads.
+Skills, chat, tool servers and your tasks and notes never leave the phone.
 
 ## Testing
 
@@ -167,6 +172,11 @@ flutter test integration_test/runtime_test.dart -d <device> --no-uninstall
 **Always pass `--no-uninstall`.** Without it Flutter uninstalls the app after
 the run, and Android deletes the imported models with it. `flutter drive`
 (used for profile-mode runs) does the same and has no flag to prevent it.
+Tests install a debug-signed build. If the phone has the release APK signed
+with your own key, Flutter uninstalls it first (signatures differ), so the
+models go even with `--no-uninstall`; back them up first.
+`integration_test/download_test.dart` downloads the embedding model over
+Wi-Fi into a temporary folder (pause, resume, SHA-256 check).
 
 | Suite | Checks |
 | --- | --- |

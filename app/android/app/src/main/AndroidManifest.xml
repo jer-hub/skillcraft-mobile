@@ -2,6 +2,10 @@
     <!-- Calendar tool server (asked at runtime, on first calendar tool use). -->
     <uses-permission android:name="android.permission.READ_CALENDAR" />
     <uses-permission android:name="android.permission.WRITE_CALENDAR" />
+    <!-- Used only to download the model files from Hugging Face when the user
+         taps Download. Skills, chat and tools never use the network. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- Background skill runs (RunService): keeps a run alive off screen. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />

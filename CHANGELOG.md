@@ -13,6 +13,10 @@ First public release.
 - Tool servers (MCP over JSON-RPC, sandboxed in QuickJS): tasks in SQLite,
   device calendar, notes with semantic search (sqlite-vec + nomic-embed).
 - Bundled skills: `/extract-tasks`, `/capture-tasks` (saves each task).
+- First-run model download from pinned Hugging Face URLs: resumable, paused
+  from the app or the notification, with a mobile-data warning, a free-space
+  check and SHA-256 verification. Importing a file still works. The internet
+  permission is used only for this download.
 - Runs keep going when you switch apps or turn the screen off: a foreground
   service with a Stop action holds a wake lock for the run only, and the model
   is never unloaded mid-run. Settings → Background can exempt SkillCraft from

@@ -24,8 +24,9 @@ class SetupScreen extends ConsumerWidget {
             const SizedBox(height: 24),
             Text('Welcome to SkillCraft', style: theme.textTheme.headlineSmall),
             const SizedBox(height: 8),
-            const Text('Everything runs on this phone. Import the model files once; '
-                'after that SkillCraft works offline.'),
+            const Text('Everything runs on this phone. Download or import the model files '
+                'once; after that SkillCraft works offline. The internet is used only '
+                'for these downloads.'),
             const SizedBox(height: 8),
             if (gb != null)
               Text(
@@ -47,9 +48,10 @@ class SetupScreen extends ConsumerWidget {
             ),
             const SizedBox(height: 16),
             Text(
-              'Get the files from Hugging Face (Qwen/Qwen2.5-1.5B-Instruct-GGUF and '
-              'nomic-ai/nomic-embed-text-v1.5-GGUF), or copy them over USB into '
-              'Android/data/com.skillcraft.app/files/models.',
+              'Downloads come from Hugging Face (Qwen/Qwen2.5-1.5B-Instruct-GGUF and '
+              'nomic-ai/nomic-embed-text-v1.5-GGUF) and are checked against their '
+              'published SHA-256. You can also import a downloaded file, or copy it over '
+              'USB into Android/data/com.skillcraft.app/files/models.',
               style: theme.textTheme.bodySmall,
             ),
           ],

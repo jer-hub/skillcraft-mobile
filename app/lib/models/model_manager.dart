@@ -7,12 +7,15 @@ import 'package:path/path.dart' as p;
 
 import '../core/config.dart';
 import '../core/device_services.dart';
+import 'model_download.dart';
+
+export 'model_download.dart' show DownloadControl, DownloadDone, DownloadFailed, DownloadResult, DownloadStopped;
 
 enum ModelRole { chat, embedding }
 
 /// A model file SkillCraft knows the exact bytes of.
 class KnownModel {
-  const KnownModel(this.role, this.fileName, this.bytes, this.sha256, this.label);
+  const KnownModel(this.role, this.fileName, this.bytes, this.sha256, this.label, this.url);
 
   final ModelRole role;
 
@@ -21,16 +24,24 @@ class KnownModel {
   final int bytes;
   final String sha256;
   final String label;
+
+  /// Pinned to a Hugging Face commit, so the bytes never change under [sha256].
+  final String url;
 }
 
-/// Verified with the published Hugging Face hashes (2026-10-30).
+/// Verified with the published Hugging Face hashes (2026-10-30). The URLs name
+/// a commit rather than `main`, so they keep matching these hashes.
 const knownModels = [
   KnownModel(ModelRole.chat, AppPaths.defaultModelFile, 1117320736,
       '6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e',
-      'Qwen2.5 1.5B Instruct (Q4_K_M)'),
+      'Qwen2.5 1.5B Instruct (Q4_K_M)',
+      'https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/'
+          '91cad51170dc346986eccefdc2dd33a9da36ead9/qwen2.5-1.5b-instruct-q4_k_m.gguf'),
   KnownModel(ModelRole.embedding, AppPaths.embeddingModelFile, 84106624,
       'd4e388894e09cf3816e8b0896d81d265b55e7a9fff9ab03fe8bf4ef5e11295ac',
-      'nomic-embed-text v1.5 (Q4_K_M)'),
+      'nomic-embed-text v1.5 (Q4_K_M)',
+      'https://huggingface.co/nomic-ai/nomic-embed-text-v1.5-GGUF/resolve/'
+          '0188c9bf409793f810680a5a431e7b899c46104c/nomic-embed-text-v1.5.Q4_K_M.gguf'),
 ];
 
 KnownModel knownFor(ModelRole role) => knownModels.firstWhere((m) => m.role == role);
@@ -103,6 +114,30 @@ class ModelManager {
     } finally {
       await sub.cancel();
     }
+  }
+
+  /// Downloads the known file for [role] (see [downloadFile]).
+  Future<DownloadResult> download(ModelRole role,
+      {void Function(String stage, double fraction)? onProgress, DownloadControl? control}) async {
+    final known = knownFor(role);
+    await dir.create(recursive: true);
+    return downloadFile(Uri.parse(known.url), fileFor(role),
+        bytes: known.bytes,
+        sha256: known.sha256,
+        freeBytes: () => _device.freeBytes(dir.path),
+        onProgress: onProgress,
+        control: control);
+  }
+
+  /// Bytes of an unfinished download for [role] (0 when there is none).
+  int partialDownload(ModelRole role) {
+    final part = File('${fileFor(role).path}.part');
+    return part.existsSync() ? part.lengthSync() : 0;
+  }
+
+  Future<void> discardPartialDownload(ModelRole role) async {
+    final part = File('${fileFor(role).path}.part');
+    if (await part.exists()) await part.delete();
   }
 
   Future<void> remove(ModelRole role) async {
