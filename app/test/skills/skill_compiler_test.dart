@@ -185,9 +185,26 @@ output_schema: {type: object, properties: {}}
 
       final tasks = ((response as FinalOutput).output as Map)['tasks'] as List;
       expect(tasks.map((t) => (t as Map).containsKey('due_date')),
-          [false, false, false, true, false]);
+          [false, false, false, true], reason: "the {title: None} item is dropped");
       expect(tasks[3]['due_date'], 'Nov 15');
-      expect(tasks[4]['title'], 'None', reason: 'required fields are kept');
+    });
+
+    test('drops array items whose required text is a placeholder', () async {
+      final compiled = await compiler.compile(extractTasks, {'raw_text': 'x'});
+      // Verbatim device outputs for the inputs ".", "12345 67890" and filler.
+      for (final raw in [
+        '{"tasks":[{"title":"None","priority":"low"}]}',
+        '{"tasks":[{"title":"N/A","priority":"low"},{"title":"Call Ana","priority":"high"}]}',
+      ]) {
+        final out = (compiled.parse(raw) as FinalOutput).output as Map;
+        expect((out['tasks'] as List).every((t) => t['title'] != 'None' && t['title'] != 'N/A'), isTrue);
+      }
+      final kept = (compiled.parse('{"tasks":[{"title":"N/A","priority":"low"},'
+              '{"title":"Call Ana","priority":"high"}]}') as FinalOutput)
+          .output as Map;
+      expect(kept['tasks'], [
+        {'title': 'Call Ana', 'priority': 'high'},
+      ]);
     });
 
     test('strips placeholders inside a tool-call envelope', () async {

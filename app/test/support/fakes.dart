@@ -57,6 +57,7 @@ class FakeEngine implements InferenceEngine, EmbeddingEngine {
 
   @override
   Stream<String> generate(String prompt, GenerationOptions options) async* {
+    cancelled = false; // like sc_begin, a new generation clears the flag
     prompts.add(prompt);
     optionsSeen.add(options);
     if (replies.isEmpty) throw StateError('FakeEngine: no reply scripted');

@@ -169,6 +169,51 @@ void main() {
     expect((missing.single as AgentFailed).error, isA<SkillInputException>());
   });
 
+  test('a repetition loop is stopped and the complete items are kept', () async {
+    final skill =
+        parseSkill(File('assets/skills/extract-tasks.md').readAsStringSync());
+    final looped = '{"tasks":[{"title":"Pay tuition","priority":"high"},'
+        '${List.filled(30, '{"title":"Buy supplies","priority":"high"}').join(',')}]}';
+    final engine = FakeEngine([looped]);
+
+    final events = await runner(engine).run(skill, {'raw_text': 'x'}).toList();
+
+    final done = events.last as AgentFinished;
+    expect(done.partial, isTrue);
+    expect(((done.output as Map)['tasks'] as List).map((t) => t['title']),
+        ['Pay tuition', 'Buy supplies']);
+    final streamed = events.whereType<AgentToken>().map((t) => t.text).join();
+    expect(streamed.length, lessThan(looped.length ~/ 2), reason: 'stopped early');
+  });
+
+  test('output cut off by the token limit is salvaged', () async {
+    final skill =
+        parseSkill(File('assets/skills/extract-tasks.md').readAsStringSync());
+    final engine = FakeEngine(['{"tasks":[{"title":"A","priority":"low"},{"title":"B","pri']);
+
+    final done = (await runner(engine).run(skill, {'raw_text': 'x'}).toList()).last as AgentFinished;
+
+    expect(done.partial, isTrue);
+    expect(done.output, {
+      'tasks': [
+        {'title': 'A', 'priority': 'low'},
+      ],
+    });
+  });
+
+  test('the reply may use all context left after the prompt', () async {
+    final skill =
+        parseSkill(File('assets/skills/extract-tasks.md').readAsStringSync());
+    final engine = FakeEngine(['{"tasks":[]}']);
+    final compiler = SkillCompiler(engine);
+    final events = await AgentRunner(engine: engine, compiler: compiler, mcp: mcp)
+        .run(skill, {'raw_text': 'x'})
+        .toList();
+    final prompt = (events.first as AgentCompiled).compiled.promptTokens;
+    expect(engine.optionsSeen.single.maxTokens, compiler.config.contextTokens - prompt - 8);
+    expect(engine.optionsSeen.single.maxTokens, greaterThan(compiler.maxOutputTokens));
+  });
+
   test('cancel stops the run', () async {
     final engine = FakeEngine(['{"type":"final","output":{"summary":"long answer here"}}']);
     final r = runner(engine);

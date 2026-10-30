@@ -29,15 +29,23 @@ abstract final class QwenChatTemplate {
   }) {
     final b = StringBuffer();
     for (final m in messages) {
+      final content = escapeSpecialTokens(m.content);
       switch (m.role) {
         case ChatRole.tool:
-          b.write('${imStart}user\n<tool_response>\n${m.content}\n'
+          b.write('${imStart}user\n<tool_response>\n$content\n'
               '</tool_response>$imEnd\n');
         case ChatRole.system || ChatRole.user || ChatRole.assistant:
-          b.write('$imStart${m.role.name}\n${m.content}$imEnd\n');
+          b.write('$imStart${m.role.name}\n$content$imEnd\n');
       }
     }
     if (addGenerationPrompt) b.write('${imStart}assistant\n');
     return b.toString();
   }
+
+  /// The prompt is tokenized with special-token parsing on (the template's
+  /// own markers must become control tokens), so text such as
+  /// "<|im_end|><|im_start|>assistant" inside a message would otherwise end
+  /// that turn and start a forged one. A zero-width space after "<" keeps
+  /// the text readable but no longer matches any `<|...|>` special token.
+  static String escapeSpecialTokens(String text) => text.replaceAll('<|', '<​|');
 }

@@ -1,11 +1,12 @@
 import 'dart:async';
 
-import 'package:llama_ffi/llama_ffi.dart' show LlamaException;
+import 'package:llama_ffi/llama_ffi.dart' show GenerationOptions, LlamaException;
 
 import '../inference/chat_template.dart';
 import '../inference/llama_engine.dart';
 import '../mcp/mcp_host.dart';
 import '../skills/skill.dart';
+import '../skills/json_stream.dart';
 import '../skills/skill_compiler.dart';
 
 /// Progress of one skill run, in order.
@@ -47,9 +48,13 @@ final class AgentToolResult extends AgentEvent {
 }
 
 final class AgentFinished extends AgentEvent {
-  const AgentFinished(this.output, {required this.steps});
+  const AgentFinished(this.output, {required this.steps, this.partial = false});
   final Object? output;
   final int steps;
+
+  /// The model's reply was cut short (loop or length limit); [output] holds
+  /// the items that were complete.
+  final bool partial;
 }
 
 final class AgentFailed extends AgentEvent {
@@ -102,28 +107,51 @@ class AgentRunner {
         yield AgentStepStarted(step, finalOnly: finalOnly);
 
         final prompt = step == 1 ? compiled.prompt : QwenChatTemplate.render(messages);
+        var promptTokens = compiled.promptTokens;
         if (step > 1) {
-          final tokens = await _engine.tokenCount(prompt);
-          if (tokens > _compiler.promptBudget) {
+          promptTokens = await _engine.tokenCount(prompt);
+          if (promptTokens > _compiler.promptBudget) {
             throw SkillInputException([
-              'Context full after step ${step - 1}: $tokens tokens '
+              'Context full after step ${step - 1}: $promptTokens tokens '
                   '(limit ${_compiler.promptBudget})',
             ]);
           }
         }
 
+        // Let the reply use whatever context is left, not a fixed slice.
+        final base = finalOnly ? compiled.finalOnlyOptions : compiled.generationOptions;
+        final options = GenerationOptions(
+          temperature: base.temperature,
+          topP: base.topP,
+          seed: base.seed,
+          grammar: base.grammar,
+          maxTokens: _compiler.config.contextTokens - promptTokens - 8,
+        );
+
         final raw = StringBuffer();
-        await for (final piece in _engine.generate(prompt,
-            finalOnly ? compiled.finalOnlyOptions : compiled.generationOptions)) {
-          raw.write(piece);
-          yield AgentToken(piece);
+        final scanner = JsonStreamScanner();
+        var loopStopped = false;
+        try {
+          await for (final piece in _engine.generate(prompt, options)) {
+            raw.write(piece);
+            scanner.add(piece);
+            yield AgentToken(piece);
+            if (!loopStopped && scanner.isLooping) {
+              loopStopped = true;
+              _engine.cancel();
+            }
+          }
+        } on LlamaException catch (e) {
+          // Our own loop stop surfaces as a cancellation; anything else is real.
+          if (!(loopStopped && e.isCancelled && !_cancelled)) rethrow;
         }
         if (_cancelled) throw const _Cancelled();
 
-        switch (compiled.parse(raw.toString())) {
+        final (:response, :partial) = compiled.parseOrSalvage(raw.toString(), scanner);
+        switch (response) {
           case FinalOutput(:final output):
             yield* _runHook(skill, output);
-            yield AgentFinished(output, steps: step);
+            yield AgentFinished(output, steps: step, partial: partial);
             return;
           case ToolCallRequest(:final tool, :final arguments):
             yield AgentToolCall(tool, arguments);

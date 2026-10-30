@@ -7,6 +7,7 @@ import '../core/config.dart';
 import '../inference/chat_template.dart';
 import '../inference/llama_engine.dart';
 import '../mcp/tool_spec.dart';
+import 'json_stream.dart';
 import 'skill.dart';
 
 /// Inputs that are missing, unknown or of the wrong type.
@@ -92,6 +93,24 @@ class CompiledSkill {
 
   final JsonSchema _validator;
 
+  /// Like [parse], but if the reply is unfinished (a repetition loop was
+  /// stopped, or the token limit cut it off) falls back to the most complete
+  /// prefix from [scanner] that closes cleanly and validates.
+  ({SkillResponse response, bool partial}) parseOrSalvage(String raw, JsonStreamScanner scanner) {
+    try {
+      return (response: parse(raw), partial: false);
+    } on SkillOutputException {
+      for (final candidate in scanner.salvageCandidates().take(25)) {
+        try {
+          return (response: parse(candidate), partial: true);
+        } on SkillOutputException {
+          continue;
+        }
+      }
+      rethrow;
+    }
+  }
+
   /// Parses and validates a model reply.
   ///
   /// Throws [SkillOutputException] if it is not valid against the schema;
@@ -151,11 +170,24 @@ void stripPlaceholders(Object? value, Map<String, Object?> schema) {
   } else if (value is List) {
     final items = schema['items'];
     if (items is Map<String, Object?>) {
+      // An item whose required text is a placeholder ({"title": "None"}) says
+      // nothing; small models emit it when there is nothing to extract.
+      value.removeWhere((item) => _hasPlaceholderRequired(item, items));
       for (final item in value) {
         stripPlaceholders(item, items);
       }
     }
   }
+}
+
+bool _hasPlaceholderRequired(Object? item, Map<String, Object?> schema) {
+  if (item is! Map) return false;
+  final required = schema['required'];
+  if (required is! List) return false;
+  return required.any((key) {
+    final v = item[key];
+    return v is String && _placeholder.hasMatch(v);
+  });
 }
 
 /// Whether [value] carries every `const` property the [variant] demands.

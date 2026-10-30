@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:llama_ffi/llama_ffi.dart' show GenerationOptions, LlamaException;
 
@@ -180,8 +181,17 @@ class ChatController extends Notifier<ChatState> {
               ...run.toolCalls.take(run.toolCalls.length - 1),
               run.toolCalls.last.withResult(result),
             ]),
-          AgentFinished(:final output) => run.copyWith(
-              status: RunStatus.finished, output: output, elapsedMs: sw.elapsedMilliseconds),
+          AgentFinished(:final output, :final partial) => run.copyWith(
+              status: RunStatus.finished,
+              output: output,
+              elapsedMs: sw.elapsedMilliseconds,
+              warnings: partial
+                  ? [
+                      ...run.warnings,
+                      'The model started repeating itself or ran out of room, so the '
+                          'reply was cut short. Showing the items that were complete.',
+                    ]
+                  : null),
           AgentFailed(:final error, :final cancelled) => run.copyWith(
               status: cancelled ? RunStatus.cancelled : RunStatus.failed,
               error: cancelled ? null : _describe(error),
@@ -190,6 +200,11 @@ class ChatController extends Notifier<ChatState> {
       }
     });
     _runner = null;
+    final done = _item<SkillRun>(id);
+    // One line per run, for profiling with `adb logcat -s flutter`.
+    debugPrint('SKILL_RUN /${skill.name} ${done?.status.name} ${sw.elapsedMilliseconds}ms '
+        'prompt=${done?.promptTokens}tok out=${done?.streamed.length}chars '
+        'reused=${deps.engine.lastReusedTokens}tok');
   }
 
   /// Plain reply using recent plain-chat history within the context budget.
