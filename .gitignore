@@ -11,3 +11,8 @@ Thumbs.db
 
 # Local Claude Code settings
 .claude/settings.local.json
+
+# Release signing (see README, "Releasing")
+key.properties
+*.jks
+*.keystore

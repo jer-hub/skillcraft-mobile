@@ -110,6 +110,22 @@ class SettingsScreen extends ConsumerWidget {
                 'suggested. Needs the embedding model.',
             onChanged: (v) => controller.change((s) => s.copyWith(suggestThreshold: v)),
           ),
+          const _Header('About'),
+          ListTile(
+            leading: const Icon(Icons.info_outline),
+            title: const Text('About & licenses'),
+            subtitle: Text(ref.watch(appVersionProvider).value == null
+                ? 'SkillCraft'
+                : 'SkillCraft ${ref.watch(appVersionProvider).value!.name}'),
+            onTap: () => showLicensePage(
+              context: context,
+              applicationName: 'SkillCraft',
+              applicationVersion: ref.read(appVersionProvider).value?.name,
+              applicationLegalese: 'MIT License · © 2026 Jerwin Carreon\n'
+                  'Runs fully on this device. Models are downloaded separately '
+                  'under their own licenses.',
+            ),
+          ),
           const _Header('Developer'),
           ListTile(
             leading: const Icon(Icons.speed),

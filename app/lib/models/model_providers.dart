@@ -8,6 +8,9 @@ import 'model_manager.dart';
 
 final deviceServicesProvider = Provider<DeviceServices>((ref) => PlatformDeviceServices());
 
+final appVersionProvider =
+    FutureProvider<({String name, int code})>((ref) => ref.watch(deviceServicesProvider).appVersion());
+
 final modelManagerProvider = FutureProvider<ModelManager>((ref) async => ModelManager(
       await ref.watch(modelsDirectoryProvider.future),
       ref.watch(deviceServicesProvider),

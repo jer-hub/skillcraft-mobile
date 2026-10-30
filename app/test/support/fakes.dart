@@ -87,6 +87,9 @@ class FakeDeviceServices implements DeviceServices {
   final _progress = StreamController<ImportProgress>.broadcast();
 
   @override
+  Future<({String name, int code})> appVersion() async => (name: '1.0.0', code: 1);
+
+  @override
   Future<void> setKeepScreenOn(bool on) async => keepScreenOn.add(on);
 
   @override

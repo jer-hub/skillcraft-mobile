@@ -100,6 +100,40 @@ The Snapdragon 680's Cortex-A73/A53 cores are ARMv8.0-A, so llama.cpp is built
 with `-march=armv8-a` and no dotprod/i8mm instructions; a build for newer
 cores would crash on it with SIGILL.
 
+## Release signing
+
+Release builds are signed with the upload key named in
+`app/android/key.properties` (gitignored). Without that file they fall back
+to the debug key, which is fine for testing but must not be published.
+
+Create the keystore once, outside the repo, and **back it up**: if it is lost,
+installed copies can no longer be upgraded.
+
+PowerShell:
+
+```powershell
+& "C:\Program Files\Android\Android Studio\jbr\bin\keytool.exe" -genkeypair -v -keystore "$HOME\skillcraft-upload.jks" -keyalg RSA -keysize 4096 -validity 10000 -alias upload
+```
+
+Git Bash / macOS / Linux (adjust the `keytool` path to your JDK):
+
+```bash
+"C:/Program Files/Android/Android Studio/jbr/bin/keytool.exe" -genkeypair -v -keystore "$HOME/skillcraft-upload.jks" -keyalg RSA -keysize 4096 -validity 10000 -alias upload
+```
+
+Then create `app/android/key.properties`:
+
+```properties
+storeFile=C:/Users/<you>/skillcraft-upload.jks
+storePassword=<keystore password>
+keyAlias=upload
+keyPassword=<key password>
+```
+
+Check the signer with
+`apksigner verify --print-certs build/app/outputs/flutter-apk/app-release.apk`
+(it must not say `CN=Android Debug`).
+
 ## Models
 
 Models are not bundled. On first run SkillCraft asks for them and streams the

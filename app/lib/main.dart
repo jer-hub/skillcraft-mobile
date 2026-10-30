@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'core/licenses.dart';
 import 'ui/app_shell.dart';
 
 void main() {
+  registerBundledLicenses();
   runApp(const ProviderScope(child: SkillCraftApp()));
 }
 

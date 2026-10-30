@@ -75,6 +75,7 @@ flutter:
   assets:
     - assets/skills/
     - assets/tools/
+    - assets/licenses/
 
   # To add assets to your application, add an assets section, like this:
   # assets:

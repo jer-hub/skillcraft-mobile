@@ -1,0 +1,11 @@
+SkillCraft does not include any model weights. On first run it downloads, or
+lets you import, these files, which are distributed by their authors under
+their own licenses:
+
+Qwen2.5-1.5B-Instruct (GGUF, Q4_K_M) by the Qwen team, Alibaba Cloud
+  License: Apache License 2.0
+  https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF
+
+nomic-embed-text-v1.5 (GGUF, Q4_K_M) by Nomic AI
+  License: Apache License 2.0
+  https://huggingface.co/nomic-ai/nomic-embed-text-v1.5-GGUF

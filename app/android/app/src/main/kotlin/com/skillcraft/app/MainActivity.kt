@@ -16,6 +16,7 @@ import kotlin.concurrent.thread
 
 /**
  * Device services for SkillCraft over `skillcraft/device`:
+ *  - appVersion(): versionName / versionCode from the installed package.
  *  - setKeepScreenOn(bool): keeps the app on screen during agent runs; Android
  *    moves off-screen apps to slower cores (~3x slower inference measured).
  *  - importDocument({dest}): system file picker, streamed straight to `dest`
@@ -34,6 +35,12 @@ class MainActivity : FlutterActivity() {
 
         MethodChannel(messenger, "skillcraft/device").setMethodCallHandler { call, result ->
             when (call.method) {
+                "appVersion" -> {
+                    val info = packageManager.getPackageInfo(packageName, 0)
+                    @Suppress("DEPRECATION")
+                    val code = if (android.os.Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong()
+                    result.success(mapOf("name" to info.versionName, "code" to code))
+                }
                 "setKeepScreenOn" -> {
                     if (call.arguments == true) {
                         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)

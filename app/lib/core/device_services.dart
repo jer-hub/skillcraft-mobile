@@ -10,6 +10,9 @@ typedef ImportedFile = ({String name, int bytes});
 
 /// Platform services implemented in MainActivity.kt.
 abstract interface class DeviceServices {
+  /// Installed version, e.g. (name: "1.0.0", code: 1).
+  Future<({String name, int code})> appVersion();
+
   /// Keeps the screen on; Android runs off-screen apps on slower cores.
   Future<void> setKeepScreenOn(bool on);
 
@@ -26,6 +29,12 @@ abstract interface class DeviceServices {
 class PlatformDeviceServices implements DeviceServices {
   static const _channel = MethodChannel('skillcraft/device');
   static const _progress = EventChannel('skillcraft/import_progress');
+
+  @override
+  Future<({String name, int code})> appVersion() async {
+    final r = await _channel.invokeMapMethod<String, Object?>('appVersion');
+    return (name: (r?['name'] as String?) ?? '?', code: (r?['code'] as num?)?.toInt() ?? 0);
+  }
 
   @override
   Future<void> setKeepScreenOn(bool on) => _channel.invokeMethod('setKeepScreenOn', on);
