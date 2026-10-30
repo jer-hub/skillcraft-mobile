@@ -1,0 +1,2 @@
+# Shell scripts run on Android (/system/bin/sh): CRLF line endings break them.
+*.sh text eol=lf
